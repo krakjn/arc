@@ -1,40 +1,76 @@
-# Advanced Repository Control
- _The bridge across repositories_
+# arc - Aggregate Repository Control
 
-## Installation
-  Windows users, go ahead and run `install/install.exe`  
-  then within your workspace folder open up cmd-prompt or git-bash and type: `arc init`  
-  __and you are done!__
-### 1) Place [this](arc.json) configuration file in top level folder
-**_parsed on the fly_**, meaning that removal/addition of entries in `arc.json` is captured every run of `arc`
-  - **alongside** `avilon-lru` & `avilon-lru-core` & `sandel-development`
-  - in example ```C:\Users\username\workspace\git```
-  - **NOTE:** _arc will anchor and run off the location of arc.json, once placed do not move the file_
+## _The bridge across repositories_  
 
-### 2) Download a binary for your system [**here**](ftp://10.0.0.45/arc-releases/)
-  - grab the latest release and _**rename**_ it to `arc`
-### 3) Load binary into `PATH` variable
-  - Windows -> `C:\bin`
-  - Mac -> `/usr/bin` or `/usr/local/bin`
-  - Linux -> `/usr/bin/` for all users or `~/bin` just for you
+```text
+USAGE:
+    arc.exe [OPTIONS] [SUBCOMMAND]
 
-## Initialize
-  `arc init` will run parsing the `arc.json` file and load all the repos
+FLAGS:
+    -h, --help       Prints help information
+    -v, --version    Displays version of arc
 
-## Useful Commands
-|Command (optional) | Description|
-|:-------------------------------|:---------------------------------------------------|            
-| **-h, --help**                 | display this help message on the command line|
-|**-v, --version**               | print out version number of arc |
-|**init**                        | initialize arc |
-|**info**                        | print contact info, and purpose of arc|
-|**status** (**-v**)             | display status of all projects (-v for verbose)|
-|**checkout** (**-b**)           | checkout <branch_name> (-b) to create|
-|**pull**						 | pulls down all repos, on current branch|
-|**sync**                        | checkout master, and pull down all repos|
-|**reset** (**-s, -sanitize**)   | CAUTION: reset working tree to remote|
-|**-c, cmd**<command>            | invoke any shell command across arc |
-|**upgrade**                     | update binary to latest release for your system |
+OPTIONS:
+    -c <COMMAND>...        Invoke any command across all repos
+    -g <COMMAND>...        Invoke any git command across all repos
 
-### NOTES
-Understand that along with easing development by automating the synchronization of the entire project, we are trying to establish a __workflow__ via `arc`. Maintainers of their respective projects will not be affected by this flow as they will be the ones enforcing it. Developers working on a project will push to their _specific_ branches and send a _merge request_ to the maintainer when the issue is complete.  
+SUBCOMMANDS:
+    checkout    Checks out all dependent repos on same branch
+    help        Prints this message or the help of the given subcommand(s)
+    info        Print contact info, and purpose of arc
+    init        Initialize all repos defined in arc.json
+    pull        Fetch and merge on current branch
+    reset       Reset worktree to origin/master
+    show        Display current configuration
+    status      Show status of all repos in arc.json
+    sync        Checkout master and pull
+    upgrade     Update arc to lastest release (under maintenance)
+```
+
+### 1) Credential Manager
+
+- Windows  
+  - install the latest [Git Credential Manager](https://github.com/microsoft/Git-Credential-Manager-for-Windows/releases)
+- Linux/Mac
+
+        git config --global credential.helper cache
+        git config --global credential.helper "store --file=~/.my-credentials"
+
+- The credential helper command will store credentials for 15 mins. Passing  
+  the `--file` argument will store your credentials permenantly, however they  
+  are in ***plain text***. For more info look at the  
+  [git-docs](https://git-scm.com/book/id/v2/Git-Tools-Credential-Storage)
+
+  - An example credential file will look like this (only one line):  
+
+      `http://tbright:3YU567IoTdcDGMor@dev.sandel.local`
+
+### 2) Place [this](config/arc.json) configuration file in top level folder
+
+**_parsed on the fly_**, meaning that **removal/addition** of entries in `arc.json` is captured every run of `arc`
+
+- create `avilon/` heirarchy noted in `arc.json`
+- in example `C:\Users\username\workspace\git`
+- **NOTE:** _arc will anchor and run off the location of arc.json, once placed do not move the file_
+
+### 3) Download a binary for your system [**here**](http://dev.sandel.local/avilon/tools/arc/-/releases)
+
+### 4) Place `arc` into path
+
+- Windows: create directory `C:\bin`, append to system PATH
+- Mac: `/usr/local/bin`
+- Linux: `/usr/bin/` for all users or `~/bin` just for you
+
+### 5) Initialize
+
+- run `arc init`
+- arc will clone all repos defined in `arc.json`.  
+- _Feature Enhancement:_ allow for multiple remotes, currently only one is supported `origin`.
+
+#### `arc upgrade`
+
+_Under Maintenance:_  In the future, `arc` will be able to update the binary from the command line.
+
+### Workflow
+
+Understand that along with easing development by automating the synchronization of the entire project, `arc` could prove useful as a __workflow__ tool. Adding the capability of git hooks could prove beneficial to aide issue management in GitLab. Maintainers of their repective projects will not be affected by this flow as they will be the ones enforcing it. Developers working on a project will push to their _specific_ branches and send a _merge request_ to the maintainer when the issue is complete.

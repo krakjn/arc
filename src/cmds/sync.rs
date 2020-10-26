@@ -5,83 +5,82 @@ use std::path::PathBuf;
 use std::fs;
 use std::process::{Command, Stdio};
 
-use defs::*;
-use arc::*;
+use crate::arc::*;
+use crate::defs::*;
 
-//   _________                    
-//  /   _____/__.__. ____   ____  
-//  \_____  <   |  |/    \_/ ___\ 
-//  /        \___  |   |  \  \___ 
+//   _________
+//  /   _____/__.__. ____   ____
+//  \_____  <   |  |/    \_/ ___\
+//  /        \___  |   |  \  \___
 // /_______  / ____|___|  /\___  >
-//         \/\/         \/     \/ 
-pub fn sync(arc: &Arc) { // $SYNC
+//         \/\/         \/     \/
+pub fn sync(arc: &Arc) {
+    // $SYNC
 
-    let start_dir = env::current_dir().unwrap();    // to reset directory
+    let start_dir = env::current_dir().unwrap(); // to reset directory
     let switched = Regex::new(r"Switch.*'(.*?)'").unwrap();
     let already = Regex::new(r".*[A|a]lready.*").unwrap();
     let up_to_date = Regex::new(r".*up.to.date.*").unwrap();
     let updating = Regex::new(r".*Updating.*").unwrap();
     let conflict = Regex::new(r".*conflict.*").unwrap();
 
-
     for repo in &arc.repos {
-
         env::set_current_dir(&arc.path.tld).expect("arc root directory not found");
         let mut path = PathBuf::from(&arc.path.tld);
-        path.push(&repo.name);              
-        
+        path.push(&repo.name);
+
         let chdir_result = env::set_current_dir(&path);
         match chdir_result {
-            Err(_) => { // if added repo to arc.json clone down new additions
+            Err(_) => {
+                // if added repo to arc.json clone down new additions
                 let (relative_path, short_name) = super::init::clone_path(&repo.name);
                 // always create path from top level directory
                 env::set_current_dir(&arc.path.tld).unwrap();
 
                 if relative_path != "shallow" {
-                    
                     let result_create = fs::create_dir_all(&relative_path);
                     match result_create {
                         Err(e) => println!("couldn't create directory {}", e),
-                        Ok(_) => (),   
+                        Ok(_) => (),
                     }
                     let result_change = env::set_current_dir(&relative_path);
                     match result_change {
                         Err(e) => println!("couldn't find directory? {}", e),
-                        Ok(_) => (),   
+                        Ok(_) => (),
                     }
                 }
 
-                print!("{:.<50}", &repo.name); 
+                print!("{:.<50}", &repo.name);
                 print!("{:.>25} ", &short_name);
                 print_fancyln("cloning", Attrs::BOLD, Colors::CYAN);
-                
+
                 let fatal = Regex::new(r".*[f|F]+atal.*").unwrap();
                 let url = format!("{}/{}.git", &arc.remote.url, &repo.name);
                 let output = Command::new("git")
-                                    .arg("clone")
-                                    .arg(&url)
-                                    .stdout(Stdio::inherit())
-                                    .stderr(Stdio::inherit())
-                                    .output()
-                                    .expect("git clone failed");
+                    .arg("clone")
+                    .arg(&url)
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .output()
+                    .expect("git clone failed");
                 // let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
 
                 if fatal.is_match(&stderr) {
                     print!("{}", &stderr);
-                } 
+                }
                 env::set_current_dir(&arc.path.tld).unwrap();
                 continue;
-            },
+            }
             Ok(_) => (), // repo already exists
         }
 
-        // ###############  C H E C K O U T 
+        // ###############  C H E C K O U T
         let output = Command::new("git")
-                            .arg("checkout")
-                            .arg("master")
-                            .output()
-                            .expect("Couldn't invoke checkout");
+            .arg("checkout")
+            .arg("master")
+            .output()
+            .expect("Couldn't invoke checkout");
 
         let checkout_stdout = String::from_utf8_lossy(&output.stdout);
         let checkout_stderr = String::from_utf8_lossy(&output.stderr);
@@ -100,11 +99,11 @@ pub fn sync(arc: &Arc) { // $SYNC
             continue; // soft fail
         }
 
-        // ###############  P U L L 
+        // ###############  P U L L
         let pull_output = Command::new("git")
-                                .arg("pull")
-                                .output()
-                                .expect("couldn't pull");
+            .arg("pull")
+            .output()
+            .expect("couldn't pull");
         let pull_stdout = String::from_utf8_lossy(&pull_output.stdout);
         let pull_stderr = String::from_utf8_lossy(&pull_output.stderr);
 
@@ -121,8 +120,6 @@ pub fn sync(arc: &Arc) { // $SYNC
             print_fancyln("unable", Attrs::BOLD, Colors::RED);
             print!("{}", pull_stderr);
         }
-
-        
     }
     env::set_current_dir(start_dir).unwrap();
 
@@ -146,5 +143,4 @@ pub fn sync(arc: &Arc) { // $SYNC
     // // thread returns.
 
     // thread::sleep(Duration::from_millis(1000));
-
 }

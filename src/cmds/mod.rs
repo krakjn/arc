@@ -1,16 +1,17 @@
-pub mod checkout;
-pub mod init;
-pub mod pull;
-pub mod reset;
-pub mod status;
-pub mod sync;
-pub mod all;
+// import the modules into the folder module
+mod all;
+mod checkout;
+mod init;
+mod pull;
+mod reset;
+mod status;
+mod sync;
 
-
-pub use cmds::init::init;
-pub use cmds::pull::pull;
-pub use cmds::reset::reset;
-pub use cmds::status::status;
-pub use cmds::sync::sync;
-pub use cmds::checkout::checkout;
-pub use cmds::all::all;
+// publicy declare the functions
+pub use all::all;
+pub use checkout::checkout;
+pub use init::init;
+pub use pull::pull;
+pub use reset::reset;
+pub use status::status;
+pub use sync::sync;

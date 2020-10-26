@@ -1,17 +1,19 @@
 [package]
 name = "arc"
-version = "0.1.5"
+version = "0.3.4"
 authors = ["tony"]
+edition = "2018"
 
 [dependencies]
-ftp = "3.0.1"
-serde = "1.0.84"
-serde_json = "1.0.34"
-serde_derive = "1.0.84"
-regex = "1.1.0"
-winapi = "0.3.6"
-winapi-util = "0.1.1"
-wincolor = "1.0.1"
+clap = "2.33.3"
+reqwest = { version = "0.10.8", features = ["blocking"] } # HTTP client
+serde = "1.0.117" 
+serde_json = "1.0.59"
+serde_derive = "1.0.117"
+regex = "1.4.1"
+winapi = "0.3.9"
+winapi-util = "0.1.5"
+wincolor = "1.0.3"
 
 [features]
 linux = []
@@ -49,9 +51,9 @@ overflow-checks = true # use overflow checks for integer arithmetic.
 opt-level = 3
 debug = false
 rpath = false
-lto = false
+lto = true
 debug-assertions = false
-codegen-units = 16
+codegen-units = 1
 panic = 'unwind'
 incremental = false
 overflow-checks = false
