@@ -1,0 +1,10 @@
+{
+    "remote": {
+        "name": "origin",
+        "url": "http://dev.sandel.local"
+    },
+
+    "projects": {
+        "avilon/tools/arc":[]
+    }
+}
