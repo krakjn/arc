@@ -176,7 +176,7 @@ the same branch, that way you don't have to worry about unrelated
 histories ever again. 
 
 Submit issues through GitLab to:
-    http://dev.sandel.local/avilon/tools/arc
+    http://domain/path/arc
 
 The simplest solution, is the best solution - Tony Bright"
     )
@@ -210,16 +210,16 @@ pub fn show_json(arc: &Arc) {
 }
 
 // TODO: will rewrite using reqwest library
-#[allow(dead_code)]
-pub fn upgrade(_arc: &Arc) -> Result<(), reqwest::Error> {
-    //$UPGRADE
+// #[allow(dead_code)]
+// pub fn upgrade(_arc: &Arc) -> Result<(), reqwest::Error> {
+//     //$UPGRADE
 
-    let body =
-        reqwest::blocking::get("http://dev.sandel.local/avilon/tools/arc/-/releases")?.text()?;
+//     let body =
+//         reqwest::blocking::get("http://domain/path/arc/-/releases")?.text()?;
 
-    println!("body = {:?}", body);
+//     println!("body = {:?}", body);
 
-    Ok(())
+//     Ok(())
     // let start_dir = env::current_dir().unwrap();
 
     // // install location is known, either "C:\bin\arc.exe" or "/usr/bin/"
@@ -315,4 +315,4 @@ pub fn upgrade(_arc: &Arc) -> Result<(), reqwest::Error> {
     // // reset directory
     // env::set_current_dir(&start_dir).unwrap();
     // ftp_stream.quit().expect("error quiting ftp server");
-}
+// }

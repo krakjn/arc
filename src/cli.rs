@@ -42,15 +42,16 @@ fn build_cli() -> App<'static, 'static> {
                         .help("Removed cached changes"),
                 ),
         )
-        .subcommand(App::new("upgrade").about("Update arc to lastest release (under maintenance)"))
-        .arg(
-            Arg::with_name("cmd")
-                .help("Invoke any command across all repos")
-                .short("c")
-                .multiple(true)
-                .takes_value(true)
-                .value_name("COMMAND"),
-        )
+        // TODO not supported yet
+        // .subcommand(App::new("upgrade").about("Update arc to lastest release (under maintenance)"))
+        // .arg(
+        //     Arg::with_name("cmd")
+        //         .help("Invoke any command across all repos")
+        //         .short("c")
+        //         .multiple(true)
+        //         .takes_value(true)
+        //         .value_name("COMMAND"),
+        // )
         .arg(Arg::with_name("gcmd")
                 .conflicts_with("cmd")
                 .help("Invoke any git command across all repos")

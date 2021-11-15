@@ -43,7 +43,7 @@ SUBCOMMANDS:
 
   - An example credential file will look like this (only one line):  
 
-      `http://tbright:3YU567IoTdcDGMor@dev.sandel.local`
+      `http://tbright:3YU567IoTdcDGMor@domain`
 
 ### 2) Place [this](config/arc.json) configuration file in top level folder
 
@@ -53,7 +53,7 @@ SUBCOMMANDS:
 - in example `C:\Users\username\workspace\git`
 - **NOTE:** _arc will anchor and run off the location of arc.json, once placed do not move the file_
 
-### 3) Download a binary for your system [**here**](http://dev.sandel.local/avilon/tools/arc/-/releases)
+### 3) Download a binary for your system [**here**](http://domain/path/arc/-/releases)
 
 ### 4) Place `arc` into path
 
