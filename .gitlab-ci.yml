@@ -1,0 +1,13 @@
+image: registry.gitlab.com/krakjn/arc
+
+build:
+  only:
+    - main
+    - tags
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/release/arc
+      - config/arc.json
+
