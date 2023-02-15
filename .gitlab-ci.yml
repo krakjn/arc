@@ -1,13 +1,21 @@
 image: registry.gitlab.com/krakjn/arc
 
-build:
-  only:
-    - main
-    - tags
+stages:
+  - build
+
+build-nix:
+  stage: build
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+
   script:
     - cargo build --release
+    - chmod 755 target/release/arc
+    - cp target/release/arc config/arc.json .
+
   artifacts:
+    name: 'arc-$CI_COMMIT_TAG'
     paths:
-      - target/release/arc
-      - config/arc.json
+      - arc
+      - arc.json
 
