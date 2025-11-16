@@ -1,10 +1,10 @@
-use regex::Regex;
+use crate::defs::*;
+use crate::error::{ArcError, Result};
+use crate::utils;
+use owo_colors::OwoColorize;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
-
-use crate::arc::*;
-use crate::defs::*;
 
 // _________ .__                   __                 __
 // \_   ___ \|  |__   ____   ____ |  | ______  __ ___/  |_
@@ -12,123 +12,108 @@ use crate::defs::*;
 // \     \___|   Y  \  ___/\  \___|    <  <_> )  |  /|  |
 //  \______  /___|  /\___  >\___  >__|_ \____/|____/ |__|
 //         \/     \/     \/     \/     \/
-pub fn checkout(arc: &Arc, new_branch: bool, branch_name: &str) {
-    // $CHECKOUT
-
-    if !find_git() {
-        println!("not within git repo");
-        std::process::exit(1);
+/// Checkout a branch across all dependent repositories
+pub fn checkout(arc: &Arc, new_branch: bool, branch_name: &str) -> Result<()> {
+    if !utils::find_git() {
+        return Err(ArcError::GitNotFound);
     }
 
-    let checkout_cmd: Vec<&str>;
-    if new_branch {
-        checkout_cmd = vec!["checkout", "-b", branch_name];
+    let checkout_cmd: Vec<&str> = if new_branch {
+        vec!["checkout", "-b", branch_name]
     } else {
-        checkout_cmd = vec!["checkout", branch_name];
-    }
+        vec!["checkout", branch_name]
+    };
 
-    let start_dir = env::current_dir().unwrap(); // to reset directory
+    let start_dir = env::current_dir()?;
     let path_str = start_dir.to_string_lossy();
     let this_proj: Vec<&str> = path_str.split(|c| c == '/' || c == '\\').collect();
-    let cwd: &str = this_proj[this_proj.len() - 1];
+    let cwd: &str = this_proj.last().unwrap_or(&"");
 
     for repo in &arc.repos {
         let proj_name: Vec<&str> = repo.name.split(|c| c == '/' || c == '\\').collect();
-        let short_name = proj_name[proj_name.len() - 1];
+        let short_name = proj_name.last().unwrap_or(&"");
 
-        if short_name == cwd {
+        if short_name == &cwd {
+            // Checkout dependencies first
             for dep in &repo.deps {
                 let mut this_path = PathBuf::from(&arc.path.tld);
-                this_path.push(&dep);
-                let result = env::set_current_dir(&this_path);
-
-                match result {
-                    Err(_) => {
-                        let fmt_str = format!("cannot find directory {}", dep);
-                        print_fancyln(&fmt_str, Attrs::UNDERLINE, Colors::RED);
-                        env::set_current_dir(&arc.path.tld).unwrap();
-                        continue;
-                    }
-                    Ok(_) => (),
+                this_path.push(dep);
+                
+                if env::set_current_dir(&this_path).is_err() {
+                    eprintln!("{} {}", "Cannot find directory:".red().underline(), dep);
+                    let _ = env::set_current_dir(&arc.path.tld);
+                    continue;
                 }
-                checkout_parse(new_branch, &checkout_cmd, &dep, true);
-            } // end of dep for loop
+                checkout_parse(new_branch, &checkout_cmd, dep, branch_name, true)?;
+            }
 
-            break; // no need to keep going (only operates on 'one main' repo)
+            break;
         }
     }
-    // do I need to check if name was set?
-    // now on current directory
-    env::set_current_dir(&start_dir).expect("couldn't set to current directory");
-    checkout_parse(new_branch, &checkout_cmd, &cwd, false);
+
+    env::set_current_dir(&start_dir)?;
+    checkout_parse(new_branch, &checkout_cmd, cwd, branch_name, false)?;
+    
+    Ok(())
 }
 
-fn checkout_parse(new_branch: bool, checkout_cmd: &Vec<&str>, name: &str, is_dep: bool) {
-    let branch_name = Regex::new(r"'(.*?)'").unwrap();
-    let switched = Regex::new(r"Switch.*'(.*?)'").unwrap();
-    let fetched = Regex::new(r"remote branch '(.*?)'").unwrap();
-    let already = Regex::new(r".*[A|a]lready.*").unwrap();
-
+fn checkout_parse(
+    new_branch: bool,
+    checkout_cmd: &[&str],
+    name: &str,
+    branch_name_arg: &str,
+    is_dep: bool,
+) -> Result<()> {
     let output = Command::new("git")
         .args(checkout_cmd)
         .output()
-        .expect("Couldn't check out");
+        .map_err(|e| ArcError::GitCommandFailed(e.to_string()))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    if branch_name.is_match(&stdout) {
-        let caps = branch_name
-            .captures(&stdout)
-            .expect("couldn't capture branch name");
-
-        if is_dep {
-            print_fancy(" dep ", Attrs::BOLD, Colors::PURPLE);
-        } else {
-            print_fancy(" >>> ", Attrs::BOLD, Colors::CYAN);
-        }
-        print!("{:.<50}", name);
-
-        if fetched.is_match(&stdout) {
-            print_fancy("fetched-> ", Attrs::BOLD, Colors::GREEN);
-            println!("{}", caps.get(1).unwrap().as_str()); // print fetched branch
-        } else if switched.is_match(&stdout) {
-            let caps = switched.captures(&stdout).expect("couldn't capture switch");
-            print_fancy("switched-> ", Attrs::BOLD, Colors::CYAN);
-            println!("{}", caps.get(1).unwrap().as_str()); // print branch name
-        } else {
-            if new_branch {
-                print_fancy("created-> ", Attrs::UNDERLINE, Colors::CYAN);
-                println!("{}", branch_name);
-            } else {
-                print_fancy("on-> ", Attrs::BOLD, Colors::YELLOW);
-                println!("{}", branch_name);
-            }
-        }
+    // Print prefix
+    if is_dep {
+        print!("{}", " dep ".magenta().bold());
     } else {
-        // stderr
-        // when creating new branch git dumps to stderr
-        // if branch is not tracked seems to be on stderr
-        if is_dep {
-            print_fancy(" dep ", Attrs::BOLD, Colors::PURPLE);
-        } else {
-            print_fancy(" >>> ", Attrs::BOLD, Colors::CYAN);
-        }
-        print!("{:.<50}", name);
-
-        if switched.is_match(&stderr) {
-            let caps = switched
-                .captures(&stderr)
-                .expect("couldn't capture switched");
-            print_fancy("switched-> ", Attrs::BOLD, Colors::CYAN);
-            println!("{}", caps.get(1).unwrap().as_str()); // print branch name
-        } else if already.is_match(&stderr) {
-            print_fancy(&stderr, Attrs::NORMAL, Colors::YELLOW);
-        } else {
-            // True error
-            print_fancyln("unable", Attrs::BOLD, Colors::RED);
-            // println!("{}", &checkout_cmd[checkout_cmd.len() - 1]);   // print incorrect branch name
-            print_fancy(&stderr, Attrs::NORMAL, Colors::RED);
-        }
+        print!("{}", " >>> ".cyan().bold());
     }
+    print!("{:.<50}", name);
+
+    // Check stdout for success patterns
+    if utils::BRANCH_QUOTE.is_match(&stdout) {
+        if utils::FETCHED.is_match(&stdout) {
+            if let Some(caps) = utils::FETCHED.captures(&stdout) {
+                print!("{}", "fetched-> ".green().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
+            }
+        } else if utils::SWITCHED.is_match(&stdout) {
+            if let Some(caps) = utils::SWITCHED.captures(&stdout) {
+                print!("{}", "switched-> ".cyan().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
+            }
+        } else if new_branch {
+            print!("{}", "created-> ".cyan().underline());
+            println!("{}", branch_name_arg);
+        } else {
+            print!("{}", "on-> ".yellow().bold());
+            println!("{}", branch_name_arg);
+        }
+    } else if utils::SWITCHED.is_match(&stderr) {
+        // Check stderr (git sometimes outputs to stderr)
+        if let Some(caps) = utils::SWITCHED.captures(&stderr) {
+            print!("{}", "switched-> ".cyan().bold());
+            println!("{}", caps.get(1).unwrap().as_str());
+        }
+    } else if utils::ALREADY.is_match(&stderr) {
+        print!("{}", stderr.yellow());
+    } else if !stderr.is_empty() {
+        // True error
+        println!("{}", "unable".red().bold());
+        eprint!("{}", stderr.red());
+    } else {
+        println!("{}", "ok".green());
+    }
+
+    Ok(())
 }

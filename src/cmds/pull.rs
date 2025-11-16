@@ -1,10 +1,10 @@
-use regex::Regex;
+use crate::defs::*;
+use crate::error::{ArcError, Result};
+use crate::utils;
+use owo_colors::OwoColorize;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
-
-use crate::arc::*;
-use crate::defs::*;
 
 // __________      .__  .__
 // \______   \__ __|  | |  |
@@ -12,75 +12,68 @@ use crate::defs::*;
 //  |    |   |  |  /  |_|  |__
 //  |____|   |____/|____/____/
 
-pub fn pull(arc: &Arc) {
-    // $PULL
-    let start_dir = env::current_dir().unwrap(); // to reset directory
-                                                 // regex expressions
-    let branch_name = Regex::new(r"(?m)^## (.*?)\..*$").unwrap();
-    let untracked_branch = Regex::new(r"(?m)^## (.*?)$").unwrap();
-    let up_to_date = Regex::new(r".*up.to.date.*").unwrap();
-    let updating = Regex::new(r".*Updating.*").unwrap();
-    let conflict = Regex::new(r".*conflict.*").unwrap();
+/// Pull changes from remote for all repositories
+pub fn pull(arc: &Arc) -> Result<()> {
+    let start_dir = env::current_dir()?;
 
     for repo in &arc.repos {
-        env::set_current_dir(&arc.path.tld).expect("arc root directory not found");
+        env::set_current_dir(&arc.path.tld)?;
         let mut os_path = PathBuf::from(&arc.path.tld);
         os_path.push(&repo.name);
-        // println!("{:?}", os_path);
-        let chdir_result = env::set_current_dir(&os_path);
 
-        match chdir_result {
-            Err(_) => {
-                let fmt_str = format!("cannot find directory {}", &repo.name);
-                print_fancyln(&fmt_str, Attrs::UNDERLINE, Colors::RED);
-                env::set_current_dir(&arc.path.tld).unwrap();
-                continue;
-            }
-            Ok(_) => (),
+        if env::set_current_dir(&os_path).is_err() {
+            eprintln!("{} {}", "Cannot find directory:".red().underline(), &repo.name);
+            env::set_current_dir(&arc.path.tld)?;
+            continue;
         }
 
+        // Get current branch status
         let status = Command::new("git")
-            .arg("status")
-            .arg("-bs") // branch short version
+            .args(["status", "-bs"])
             .output()
-            .expect("couldn't status");
+            .map_err(|e| ArcError::GitCommandFailed(e.to_string()))?;
         let branchout = String::from_utf8_lossy(&status.stdout);
 
         print!("{:.<50}", &repo.name);
-        if branch_name.is_match(&branchout) {
-            let caps = branch_name.captures(&branchout).unwrap();
+        
+        if utils::BRANCH_NAME.is_match(&branchout) {
+            let caps = utils::BRANCH_NAME.captures(&branchout).unwrap();
             print!("{:.>25} ", caps.get(1).unwrap().as_str());
-        } else if untracked_branch.is_match(&branchout) {
-            let caps = untracked_branch.captures(&branchout).unwrap();
+        } else if utils::UNTRACKED_BRANCH.is_match(&branchout) {
+            let caps = utils::UNTRACKED_BRANCH.captures(&branchout).unwrap();
             print!("{:.>25} ", caps.get(1).unwrap().as_str());
-            print_fancyln("untracked", Attrs::BOLD, Colors::PURPLE);
+            println!("{}", "untracked".magenta().bold());
             continue;
         } else {
             println!("{:.>25} ", "not on a branch?");
             continue;
         }
 
+        // Execute pull
         let output = Command::new("git")
             .arg("pull")
             .output()
-            .expect("couldn't pull");
+            .map_err(|e| ArcError::PullFailed(e.to_string()))?;
+        
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        if up_to_date.is_match(&stdout) {
-            print_fancyln("up-to-date", Attrs::BOLD, Colors::GREEN);
-        } else if updating.is_match(&stdout) {
-            print_fancyln("updating", Attrs::INVERSE, Colors::GREEN);
+        if utils::UP_TO_DATE.is_match(&stdout) {
+            println!("{}", "up-to-date".green().bold());
+        } else if utils::UPDATING.is_match(&stdout) {
+            println!("{}", "updating".green().bold().on_green());
             print!("{}", stdout);
-        } else if conflict.is_match(&stdout) {
-            print_fancyln("conflict", Attrs::BOLD, Colors::YELLOW);
+        } else if utils::CONFLICT.is_match(&stdout) {
+            println!("{}", "conflict".yellow().bold());
             print!("{}", stdout);
-        } else {
-            // unknown condition
-            print_fancyln("unable", Attrs::BOLD, Colors::RED);
+        } else if !stderr.is_empty() {
+            println!("{}", "unable".red().bold());
             print!("{}", stderr);
+        } else {
+            println!("{}", "ok".green());
         }
     }
-    // reset directory to what it was before
-    env::set_current_dir(&start_dir).unwrap();
+
+    env::set_current_dir(&start_dir)?;
+    Ok(())
 }

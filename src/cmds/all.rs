@@ -1,9 +1,9 @@
+use crate::defs::*;
+use crate::error::{ArcError, Result};
+use owo_colors::OwoColorize;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
-
-use crate::arc::*;
-use crate::defs::*;
 
 //    _____  .__  .__
 //   /  _  \ |  | |  |
@@ -11,53 +11,49 @@ use crate::defs::*;
 // /    |    \  |_|  |__
 // \____|__  /____/____/
 //         \/
-pub fn all(arc: &Arc, gcmd: bool, cmd_str: &Vec<String>) {
-    // $ALL
-
-    let start_dir = env::current_dir().unwrap(); // to reset directory
+/// Execute a command across all repositories
+pub fn all(arc: &Arc, gcmd: bool, cmd_str: &Vec<String>) -> Result<()> {
+    let start_dir = env::current_dir()?;
 
     for repo in &arc.repos {
         let mut full_path = PathBuf::from(&arc.path.tld);
         full_path.push(&repo.name);
-        let result_change = env::set_current_dir(&full_path);
-        match result_change {
-            Err(e) => println!("error was this {}", e),
-            Ok(_) => (),
+        
+        if env::set_current_dir(&full_path).is_err() {
+            eprintln!("{}: {}", "Error".red(), ArcError::RepositoryNotFound(repo.name.clone()));
+            continue;
         }
-        // let repo_str = format!(" {} ", repo.name);
-        // let header = format!("{:#^75}", repo_str.as_str());
-        // print_fancyln(header.as_str(), Attrs::NORMAL, Colors::YELLOW);
 
-        print_fancy(repo.name.as_str(), Attrs::NORMAL, Colors::CYAN);
+        // Print header
+        print!("{}", repo.name.cyan());
         let header = format!(" {:#>width$}", "#", width = 75 - repo.name.len());
-        print_fancyln(header.as_str(), Attrs::NORMAL, Colors::YELLOW);
+        println!("{}", header.yellow());
 
         if gcmd {
-            // position 1 == binary name
-            // position 2 == "-c" || "-g"  flag
-
+            // Git command execution
             let output = Command::new("git")
                 .args(&cmd_str[2..])
-                // .stdout(Stdio::inherit())
-                // .stderr(Stdio::inherit())
                 .output()
-                .expect("failed to execute");
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            print!("{}", stdout);
-            print!("{}", stderr);
+                .map_err(|e| ArcError::GitCommandFailed(e.to_string()))?;
+            
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+            print!("{}", String::from_utf8_lossy(&output.stderr));
         } else {
+            // Regular command execution
+            if cmd_str.len() < 3 {
+                return Err(ArcError::GitCommandFailed("no command provided".to_string()));
+            }
+            
             let output = Command::new(&cmd_str[2])
                 .args(&cmd_str[3..])
-                // .stdout(Stdio::inherit())
-                // .stderr(Stdio::inherit())
                 .output()
-                .expect("failed to execute");
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            print!("{}", stdout);
-            print!("{}", stderr);
+                .map_err(|e| ArcError::GitCommandFailed(e.to_string()))?;
+            
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+            print!("{}", String::from_utf8_lossy(&output.stderr));
         }
     }
-    env::set_current_dir(start_dir).unwrap();
+    
+    env::set_current_dir(start_dir)?;
+    Ok(())
 }

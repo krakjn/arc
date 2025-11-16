@@ -1,10 +1,10 @@
-use regex::Regex;
+use crate::defs::*;
+use crate::error::Result;
+use crate::utils;
+use owo_colors::OwoColorize;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
-
-use crate::arc::*;
-use crate::defs::*;
 
 //   _________ __          __
 //  /   _____//  |______ _/  |_ __ __  ______
@@ -12,65 +12,44 @@ use crate::defs::*;
 //  /        \|  |  / __ \|  | |  |  /\___ \
 // /_______  /|__| (____  /__| |____//____  >
 //         \/           \/                \/
-pub fn status(arc: &Arc, verbose: bool) {
-    // $STATUS
-    let start_dir = env::current_dir().unwrap(); // to reset directory
-                                                 // regex expressions
-    let branch_name = Regex::new(r"(?m)^## (.*?)\..*$").unwrap();
-    let untracked_branch = Regex::new(r"(?m)^## (.*?)$").unwrap();
-    let ahead = Regex::new(r"(?m)^##.*\[ahead (\d+)\].*$").unwrap();
-    let behind = Regex::new(r"(?m)^##.*\[behind (\d+)\].*$").unwrap();
-    let diverged = Regex::new(r"(?m)^##.*\[ahead (\d+), behind (\d+)\].*$").unwrap();
-    let changed = Regex::new(r"(?m)^[^#]{2} .*$").unwrap();
-    // condition of files
-    let staged = Regex::new(r"(?m)[A-Z]. .*$").unwrap();
-    let unstaged = Regex::new(r"(?m).[A-Z] .*$").unwrap();
-    let untracked = Regex::new(r"(?m)^\?\? (.*)$").unwrap();
-    // state of specific files
-    let added = Regex::new(r"(?m)^A  (.*)$").unwrap();
-    let modified = Regex::new(r"(?m)^.M (.*)$").unwrap(); // AM is added and modified
-    let modified_staged = Regex::new(r"(?m)^M  (.*)$").unwrap();
-    let delete = Regex::new(r"(?m)^ D (.*)$").unwrap();
-    let delete_staged = Regex::new(r"(?m)^D  (.*)$").unwrap();
+/// Display status of all repositories
+pub fn status(arc: &Arc, verbose: bool) -> Result<()> {
+    let start_dir = env::current_dir()?;
 
     for repo in &arc.repos {
-        env::set_current_dir(&arc.path.tld).expect("arc root directory not found");
+        env::set_current_dir(&arc.path.tld)?;
         let mut os_path = PathBuf::from(&arc.path.tld);
         os_path.push(&repo.name);
-        // println!("{:?}", os_path);
-        let chdir_result = env::set_current_dir(&os_path);
 
-        match chdir_result {
-            Err(_) => {
-                let fmt_str = format!("cannot find directory {}", &repo.name);
-                print_fancyln(&fmt_str, Attrs::UNDERLINE, Colors::RED);
-                env::set_current_dir(&arc.path.tld).unwrap();
-                continue;
-            }
-            Ok(_) => (),
+        if env::set_current_dir(&os_path).is_err() {
+            eprintln!("{} {}", "Cannot find directory:".red().underline(), &repo.name);
+            env::set_current_dir(&arc.path.tld)?;
+            continue;
         }
 
         let output = Command::new("git")
-            .arg("status")
-            .arg("-b")
-            .arg("--porcelain")
-            .output()
-            .expect("Couldn't invoke git status");
+            .args(["status", "-b", "--porcelain"])
+            .output()?;
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        if branch_name.is_match(&stdout) {
-            let caps = branch_name.captures(&stdout).unwrap();
+        // Print repo name and branch
+        if utils::BRANCH_NAME.is_match(&stdout) {
+            let caps = utils::BRANCH_NAME.captures(&stdout).unwrap();
             print!("{:.<50}", &repo.name);
             let curr_branch_name = caps.get(1).unwrap().as_str();
-            if curr_branch_name == "master" {
+            
+            // Detect if on default branch
+            let default_branch = utils::detect_default_branch()
+                .unwrap_or_else(|_| "master".to_string());
+            
+            if curr_branch_name == default_branch {
                 print!("{:.>25} ", curr_branch_name);
             } else {
                 print!("{:.>width$}", ".", width = 25 - curr_branch_name.len());
-                let fancy_branch = format_fancy(curr_branch_name, Attrs::NORMAL, Colors::YELLOW);
-                print!("{} ", fancy_branch);
+                print!("{} ", curr_branch_name.yellow());
             }
-        } else if untracked_branch.is_match(&stdout) {
-            let caps = untracked_branch.captures(&stdout).unwrap();
+        } else if utils::UNTRACKED_BRANCH.is_match(&stdout) {
+            let caps = utils::UNTRACKED_BRANCH.captures(&stdout).unwrap();
             print!("{:.<50}", &repo.name);
             print!("{:.>25} ", caps.get(1).unwrap().as_str());
         } else {
@@ -79,134 +58,126 @@ pub fn status(arc: &Arc, verbose: bool) {
             continue;
         }
 
-        if diverged.is_match(&stdout) {
-            let caps = diverged.captures(&stdout).unwrap();
+        // Check divergence status
+        if utils::DIVERGED.is_match(&stdout) {
+            let caps = utils::DIVERGED.captures(&stdout).unwrap();
             let diverged_str = format!(
                 "↑{},↓{} ",
                 caps.get(1).unwrap().as_str(),
                 caps.get(2).unwrap().as_str()
             );
-            print_fancy(&diverged_str, Attrs::BOLD, Colors::BRIGHT_PURPLE);
+            print!("{}", diverged_str.bright_magenta().bold());
         } else {
-            // print out ahead or behind
-            if ahead.is_match(&stdout) {
-                let caps = ahead.captures(&stdout).unwrap();
+            if utils::AHEAD.is_match(&stdout) {
+                let caps = utils::AHEAD.captures(&stdout).unwrap();
                 let ahead_str = format!("↑{} ", caps.get(1).unwrap().as_str());
-                print_fancy(&ahead_str, Attrs::BOLD, Colors::CYAN);
+                print!("{}", ahead_str.cyan().bold());
             }
 
-            if behind.is_match(&stdout) {
-                let caps = behind.captures(&stdout).unwrap();
+            if utils::BEHIND.is_match(&stdout) {
+                let caps = utils::BEHIND.captures(&stdout).unwrap();
                 let behind_str = format!("↓{} ", caps.get(1).unwrap().as_str());
-                print_fancy(&behind_str, Attrs::BOLD, Colors::CYAN);
+                print!("{}", behind_str.cyan().bold());
             }
         }
 
+        // Verbose or simple output
         if verbose {
-            if !branch_name.is_match(&stdout) {
-                print_fancy("not pushed", Attrs::UNDERLINE, Colors::BRIGHT_PURPLE);
-            }
-
-            if changed.is_match(&stdout) {
-                print_fancyln("changed", Attrs::BOLD, Colors::RED);
-
-                // add some verbosity
-                if staged.is_match(&stdout) {
-                    for caps in delete_staged.captures_iter(&stdout) {
-                        print_fancy(
-                            format!("{: >15}", "deleted: ").as_str(),
-                            Attrs::BOLD,
-                            Colors::GREEN,
-                        );
-                        println!("{}", caps.get(1).unwrap().as_str());
-                    }
-
-                    for caps in added.captures_iter(&stdout) {
-                        print_fancy(
-                            format!("{: >15}", "added: ").as_str(),
-                            Attrs::BOLD,
-                            Colors::GREEN,
-                        );
-                        println!("{}", caps.get(1).unwrap().as_str());
-                    }
-
-                    for caps in modified_staged.captures_iter(&stdout) {
-                        print_fancy(
-                            format!("{: >15}", "modified: ").as_str(),
-                            Attrs::BOLD,
-                            Colors::GREEN,
-                        );
-                        println!("{}", caps.get(1).unwrap().as_str());
-                    }
-                }
-
-                if unstaged.is_match(&stdout) {
-                    // unstaged
-                    for caps in delete.captures_iter(&stdout) {
-                        print_fancy(
-                            format!("{: >15}", "deleted: ").as_str(),
-                            Attrs::BOLD,
-                            Colors::RED,
-                        );
-                        println!("{}", caps.get(1).unwrap().as_str());
-                    }
-
-                    for caps in modified.captures_iter(&stdout) {
-                        print_fancy(
-                            format!("{: >15}", "modified: ").as_str(),
-                            Attrs::BOLD,
-                            Colors::RED,
-                        );
-                        println!("{}", caps.get(1).unwrap().as_str());
-                    }
-                }
-
-                if untracked.is_match(&stdout) {
-                    for caps in untracked.captures_iter(&stdout) {
-                        print_fancy(
-                            format!("{: >15}", "untracked: ").as_str(),
-                            Attrs::BOLD,
-                            Colors::YELLOW,
-                        );
-                        println!("{}", caps.get(1).unwrap().as_str());
-                    }
-                }
-            } else {
-                print_fancyln("clean", Attrs::BOLD, Colors::GREEN);
-            }
+            display_verbose_status(&stdout)?;
         } else {
-            // short and sweet version
+            display_simple_status(&stdout)?;
+        }
 
-            if !branch_name.is_match(&stdout) {
-                print_fancy("!", Attrs::BOLD, Colors::BRIGHT_PURPLE);
+        env::set_current_dir(&arc.path.tld)?;
+    }
+
+    env::set_current_dir(&start_dir)?;
+    Ok(())
+}
+
+fn display_verbose_status(stdout: &str) -> Result<()> {
+    if !utils::BRANCH_NAME.is_match(stdout) {
+        print!("{}", "not pushed ".bright_magenta().underline());
+    }
+
+    if utils::CHANGED.is_match(stdout) {
+        println!("{}", "changed".red().bold());
+
+        // Staged changes
+        if utils::STAGED.is_match(stdout) {
+            for caps in utils::DELETE_STAGED.captures_iter(stdout) {
+                print!("{}", format!("{:>15}", "deleted: ").green().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
             }
 
-            if changed.is_match(&stdout) {
-                let mut partial_clean: bool = true;
-                if untracked.is_match(&stdout) {
-                    print_fancy("?", Attrs::BOLD, Colors::YELLOW);
-                }
-                if staged.is_match(&stdout) {
-                    print_fancy("✚", Attrs::BOLD, Colors::GREEN);
-                    partial_clean = false;
-                }
-                if unstaged.is_match(&stdout) {
-                    print_fancy("✘", Attrs::BOLD, Colors::RED);
-                    partial_clean = false;
-                }
-                if partial_clean {
-                    print_fancyln("✔ ", Attrs::BOLD, Colors::GREEN);
-                } else {
-                    println!(""); // new line
-                }
-            } else {
-                print_fancyln("✔ ", Attrs::BOLD, Colors::GREEN);
+            for caps in utils::ADDED.captures_iter(stdout) {
+                print!("{}", format!("{:>15}", "added: ").green().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
+            }
+
+            for caps in utils::MODIFIED_STAGED.captures_iter(stdout) {
+                print!("{}", format!("{:>15}", "modified: ").green().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
             }
         }
 
-        // reset directory to top level
-        env::set_current_dir(&arc.path.tld).expect("arc root directory not found");
+        // Unstaged changes
+        if utils::UNSTAGED.is_match(stdout) {
+            for caps in utils::DELETE.captures_iter(stdout) {
+                print!("{}", format!("{:>15}", "deleted: ").red().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
+            }
+
+            for caps in utils::MODIFIED.captures_iter(stdout) {
+                print!("{}", format!("{:>15}", "modified: ").red().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
+            }
+        }
+
+        // Untracked files
+        if utils::UNTRACKED.is_match(stdout) {
+            for caps in utils::UNTRACKED.captures_iter(stdout) {
+                print!("{}", format!("{:>15}", "untracked: ").yellow().bold());
+                println!("{}", caps.get(1).unwrap().as_str());
+            }
+        }
+    } else {
+        println!("{}", "clean".green().bold());
     }
-    // reset directory to what it was before
-    env::set_current_dir(&start_dir).unwrap();
+
+    Ok(())
+}
+
+fn display_simple_status(stdout: &str) -> Result<()> {
+    if !utils::BRANCH_NAME.is_match(stdout) {
+        print!("{}", "!".bright_magenta().bold());
+    }
+
+    if utils::CHANGED.is_match(stdout) {
+        let mut partial_clean = true;
+        
+        if utils::UNTRACKED.is_match(stdout) {
+            print!("{}", "?".yellow().bold());
+        }
+        
+        if utils::STAGED.is_match(stdout) {
+            print!("{}", "✚".green().bold());
+            partial_clean = false;
+        }
+        
+        if utils::UNSTAGED.is_match(stdout) {
+            print!("{}", "✘".red().bold());
+            partial_clean = false;
+        }
+        
+        if partial_clean {
+            println!("{}", "✔ ".green().bold());
+        } else {
+            println!();
+        }
+    } else {
+        println!("{}", "✔ ".green().bold());
+    }
+
+    Ok(())
 }

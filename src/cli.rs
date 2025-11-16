@@ -1,133 +1,143 @@
-use crate::{arc, cmds, defs::*};
-use clap::{App, Arg};
+use crate::defs::Arc;
+use crate::error::Result;
+use crate::{arc, cmds};
+use clap::{Parser, Subcommand};
 use std::env;
 
-fn build_cli() -> App<'static, 'static> {
-    App::new("arc")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("The bridge across repositories")
-        .subcommand(App::new("info").about("Print contact info, and purpose of arc"))
-        .subcommand(App::new("init").about("Initialize all repos defined in arc.json"))
-        .subcommand(App::new("pull").about("Fetch and merge on current branch"))
-        .subcommand(
-            App::new("status")
-                .about("Show status of all repos in arc.json")
-                .arg(
-                    Arg::with_name("verbose")
-                        .short("v")
-                        .long("verbose")
-                        // .multiple(true) // for further enhancement
-                        .help("Show more info"),
-                ),
-        )
-        .subcommand(
-            App::new("checkout")
-                .about("Checks out all dependent repos on same branch")
-                .arg(
-                    Arg::with_name("checkout_new_branch")
-                        .short("b")
-                        .takes_value(true)
-                        .help("Checkout new branch"),
-                ),
-        )
-        .subcommand(App::new("show").about("Display current configuration"))
-        .subcommand(App::new("sync").about("Checkout master and pull"))
-        .subcommand(
-            App::new("reset")
-                .about("Reset worktree to origin/master")
-                .arg(
-                    Arg::with_name("sanitize")
-                        .short("s")
-                        .long("sanitize")
-                        .help("Removed cached changes"),
-                ),
-        )
-        // TODO not supported yet
-        // .subcommand(App::new("upgrade").about("Update arc to lastest release (under maintenance)"))
-        .arg(
-            Arg::with_name("cmd")
-                .help("Invoke any command across all repos")
-                .short("c")
-                .multiple(true)
-                .takes_value(true)
-                .value_name("COMMAND"),
-        )
-        .arg(Arg::with_name("gcmd")
-                .conflicts_with("cmd")
-                .help("Invoke any git command across all repos")
-                .short("g")
-                .multiple(true)
-                .takes_value(true)
-                .value_name("COMMAND"),
-        )
-        .arg(
-            Arg::with_name("version")
-                .help("Displays version of arc")
-                .short("v")
-                .long("version"),
-        )
+/// Arc - Aggregate Repository Control
+/// 
+/// The bridge across repositories
+#[derive(Parser, Debug)]
+#[command(name = "arc")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(about = "The bridge across repositories", long_about = None)]
+struct Cli {
+    /// Invoke any command across all repos
+    #[arg(short = 'c', num_args = 1.., value_name = "COMMAND")]
+    cmd: Option<Vec<String>>,
+
+    /// Invoke any git command across all repos
+    #[arg(short = 'g', num_args = 1.., value_name = "COMMAND", conflicts_with = "cmd")]
+    gcmd: Option<Vec<String>>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
 }
-/**
- * brief
- * @param _arc, arc instance
- */
-pub fn parse(_arc: &mut Arc) {
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Print contact info and purpose of arc
+    Info,
+    
+    /// Initialize all repos defined in arc.json
+    Init,
+    
+    /// Fetch and merge on current branch
+    Pull,
+    
+    /// Show status of all repos in arc.json
+    Status {
+        /// Show more detailed information
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    
+    /// Checks out all dependent repos on same branch
+    Checkout {
+        /// Branch name to checkout
+        branch: String,
+        
+        /// Create a new branch
+        #[arg(short = 'b')]
+        new: bool,
+    },
+    
+    /// Display current configuration
+    Show,
+    
+    /// Checkout default branch and pull
+    Sync,
+    
+    /// Reset worktree to origin default branch
+    Reset {
+        /// Remove cached changes
+        #[arg(short, long)]
+        sanitize: bool,
+    },
+}
+
+/// Parse command line arguments and execute appropriate command
+pub fn parse(arc_instance: &mut Arc) -> Result<()> {
     let argv: Vec<String> = env::args().collect();
 
+    // Handle special cases where we pass through args to git/commands
     if argv.len() > 1 {
-        /* Note: clap cannot handle passing flags to another program
-         * hance a few custom calls to pull argument vector
-         */
-        // let argv_str = argv.iter().map(|s| &**s).collect::<Vec<&str>>();
-
         if &argv[1] == "-c" || &argv[1] == "-g" {
-            arc::load_arc(_arc); // need to load arc for context
+            arc::load_arc(arc_instance)?;
             if &argv[1] == "-g" {
-                cmds::all(_arc, true, &argv);
+                return cmds::all(arc_instance, true, &argv);
             } else {
-                cmds::all(_arc, false, &argv);
+                return cmds::all(arc_instance, false, &argv);
             }
-            return; // Not regular parsing to be handled by clap
-        } else if &argv[1] == "-v" || &argv[1] == "--version" {
-            // don't need to load arc for version
-            println!("arc-v{}", env!("CARGO_PKG_VERSION"));
-            return; // Not regular parsing to be handled by clap
         }
     }
 
-    let arg_matches = build_cli().get_matches();
+    let cli = Cli::parse();
 
-    arc::load_arc(_arc);
+    // Handle -c and -g flags (for command execution across repos)
+    if cli.cmd.is_some() || cli.gcmd.is_some() {
+        arc::load_arc(arc_instance)?;
+        let is_git = cli.gcmd.is_some();
+        let cmd_vec = if is_git {
+            cli.gcmd.as_ref().unwrap()
+        } else {
+            cli.cmd.as_ref().unwrap()
+        };
+        
+        // Build argv-like vec for compatibility with cmds::all
+        let mut argv_like = vec![String::new(), if is_git { "-g".to_string() } else { "-c".to_string() }];
+        argv_like.extend(cmd_vec.clone());
+        return cmds::all(arc_instance, is_git, &argv_like);
+    }
 
-    match arg_matches.subcommand() {
-        ("info", Some(_)) => arc::print_info(),
-        ("checkout", Some(_sub)) => {
-            let branch_name = _sub.value_of("checkout_branch").unwrap();
-            let mut new_branch = false;
-            if _sub.is_present("checkout_new_branch") {
-                new_branch = true;
-            }
-            cmds::checkout(_arc, new_branch, branch_name);
+    match cli.command {
+        Some(Commands::Info) => {
+            arc::print_info();
+            Ok(())
         }
-        ("init", Some(_)) => cmds::init(_arc),
-        ("pull", Some(_)) => cmds::pull(_arc),
-        ("reset", Some(_sub)) => {
-            let mut sanitize: bool = false;
-            if _sub.is_present("sanitize") {
-                sanitize = true;
-            }
-            cmds::reset(_arc, sanitize);
+        Some(Commands::Init) => {
+            arc::load_arc(arc_instance)?;
+            cmds::init(arc_instance)
         }
-        ("status", Some(_sub)) => {
-            let mut verbose: bool = false;
-            if _sub.is_present("verbose") {
-                verbose = true;
-            }
-            cmds::status(_arc, verbose);
+        Some(Commands::Pull) => {
+            arc::load_arc(arc_instance)?;
+            cmds::pull(arc_instance)
         }
-        ("show", Some(_)) => arc::show_json(_arc),
-        ("sync", Some(_)) => cmds::sync(_arc),
-        ("upgrade", Some(_)) => println!("...under maintenance"),
-        _ => { /* unsupported */ }
+        Some(Commands::Status { verbose }) => {
+            arc::load_arc(arc_instance)?;
+            cmds::status(arc_instance, verbose)
+        }
+        Some(Commands::Checkout { branch, new }) => {
+            arc::load_arc(arc_instance)?;
+            cmds::checkout(arc_instance, new, &branch)
+        }
+        Some(Commands::Show) => {
+            arc::load_arc(arc_instance)?;
+            arc::show_json(arc_instance);
+            Ok(())
+        }
+        Some(Commands::Sync) => {
+            arc::load_arc(arc_instance)?;
+            cmds::sync(arc_instance)
+        }
+        Some(Commands::Reset { sanitize }) => {
+            arc::load_arc(arc_instance)?;
+            cmds::reset(arc_instance, sanitize)
+        }
+        None => {
+            // No subcommand provided, print help
+            println!("Run 'arc --help' for usage information");
+            Ok(())
+        }
     }
 }
