@@ -64,10 +64,15 @@ bump:
       set -euo pipefail
       bump patch
       bump update Cargo.toml
+      VERSION="$(bump print)"
       git add -u
-      git commit -m "chore: bump to $(bump print)"
+      git commit -m "chore: bump to ${VERSION}"
       bump tag
-      git push origin "HEAD:${CI_DEFAULT_BRANCH}" --follow-tags
+      # Branch push only: combined --follow-tags often yields one branch pipeline, which
+      # workflow skips for "chore: bump to" — then no tag pipeline runs. Tag-only push
+      # starts the release pipeline (same refs as --follow-tags).
+      git push origin "HEAD:${CI_DEFAULT_BRANCH}"
+      git push origin "${VERSION}"
 
 release:
   stage: release
