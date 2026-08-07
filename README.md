@@ -62,15 +62,24 @@ dependencies = ["path/arc"]
 
 Hard cutover from older releases: `arc.json` is no longer read — convert to `arc.toml`.
 
-### 3) Download latest [**release**](http://gitlab.com/krakjn/arc/-/releases) for your system
+### 3) Install
 
-### 4) Place `arc` on PATH
+**Linux / macOS:**
 
-- Windows: create directory `C:\bin`, append to system PATH
-- Mac: `/usr/local/bin`
-- Linux: `/usr/bin/` for all users or `~/bin` just for you
+```sh
+curl -fsSL https://gitlab.com/ballast-dev/arc/-/raw/main/install/get_arc.sh | sh
+```
 
-### 5) Initialize
+**Windows (PowerShell):**
+
+```powershell
+irm https://gitlab.com/ballast-dev/arc/-/raw/main/install/get_arc.ps1 | iex
+```
+
+Or download a binary from [releases](https://gitlab.com/ballast-dev/arc/-/releases):
+`arc-linux-amd64`, `arc-macos-arm64`, `arc-macos-amd64`, `arc-windows-amd64.exe`.
+
+### 4) Initialize
 
 - run `arc init`
 - arc will clone all repos defined in `arc.toml` using each project's `url` + `path`

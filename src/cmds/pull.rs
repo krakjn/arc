@@ -27,7 +27,10 @@ pub fn pull(ws: &Workspace) -> Result<()> {
         print!("{}", utils::format_path_column(&repo.path, path_col));
 
         let Some(header) = parse::parse_branch_header(&branchout) else {
-            println!("{}", utils::format_branch_column("not on a branch?", branch_col));
+            println!(
+                "{}",
+                utils::format_branch_column("not on a branch?", branch_col)
+            );
             continue;
         };
 

@@ -27,7 +27,10 @@ pub fn status(ws: &Workspace, verbose: bool) -> Result<()> {
         print!("{}", utils::format_path_column(&repo.path, path_col));
 
         let Some(header) = parse::parse_branch_header(&stdout) else {
-            print!("{}", utils::format_branch_column("unhandled state", branch_col));
+            print!(
+                "{}",
+                utils::format_branch_column("unhandled state", branch_col)
+            );
             println!();
             continue;
         };
