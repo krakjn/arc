@@ -1,48 +1,67 @@
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap as Map;
-use std::path::PathBuf;
+use serde::Deserialize;
 
-/// Represents the file paths for arc configuration
-#[derive(Debug, Default)]
-pub struct ArcPath {
-    pub tld: PathBuf,
-    pub arc: PathBuf,
+fn default_remote() -> String {
+    "origin".into()
 }
 
-/// Represents a repository with its dependencies
-#[derive(Debug, Clone)]
-pub struct Repo {
-    pub name: String,
+/// Deserialized `arc.toml` root
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArcConfig {
+    #[serde(default, rename = "project")]
+    pub projects: Vec<ProjectConfig>,
+}
+
+/// A single `[[project]]` table
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectConfig {
+    pub path: String,
+    #[serde(default = "default_remote")]
+    pub remote: String,
+    pub url: String,
+    #[serde(default, rename = "dependencies")]
     pub deps: Vec<String>,
 }
 
-/// Main arc configuration structure
+/// File paths for the loaded workspace
+#[derive(Debug, Default, Clone)]
+pub struct ArcPath {
+    /// Directory containing `arc.toml`
+    pub tld: std::path::PathBuf,
+    /// Full path to `arc.toml`
+    pub config: std::path::PathBuf,
+}
+
+/// Runtime repository entry
+#[derive(Debug, Clone)]
+pub struct Repo {
+    pub path: String,
+    pub remote: String,
+    pub url: String,
+    pub deps: Vec<String>,
+}
+
+/// Loaded workspace configuration and roots
 #[derive(Debug, Default)]
-pub struct Arc {
+pub struct Workspace {
     pub path: ArcPath,
-    pub remote: Remote,
     pub repos: Vec<Repo>,
 }
 
-impl Arc {
-    pub fn new() -> Self {
-        Self::default()
+impl Workspace {
+    pub fn repo_dir(&self, repo: &Repo) -> std::path::PathBuf {
+        crate::utils::resolve_repo_path(&self.path.tld, &repo.path)
     }
-}
 
-//--------------------
-// J S O N
-//--------------------
-/// Remote repository configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Remote {
-    pub name: String,
-    pub url: String,
-}
-
-/// arc.json file structure
-#[derive(Debug, Deserialize)]
-pub struct ArcJson {
-    pub remote: Remote,
-    pub projects: Map<String, Vec<String>>,
+    /// Full clone URL. If `url` already looks like a repo URL (ends with `.git`), use it
+    /// as-is; otherwise treat it as a base and append `/{path}.git`.
+    pub fn clone_url(repo: &Repo) -> String {
+        let url = repo.url.trim_end_matches('/');
+        if url.ends_with(".git") {
+            url.to_string()
+        } else {
+            format!("{url}/{}.git", repo.path.trim_matches('/'))
+        }
+    }
 }

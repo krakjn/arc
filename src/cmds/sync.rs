@@ -1,135 +1,74 @@
-use crate::defs::*;
-use crate::error::{ArcError, Result};
+use crate::cmds::init::clone_repo;
+use crate::cmds::pull::print_pull_result;
+use crate::defs::Workspace;
+use crate::error::Result;
+use crate::git;
+use crate::parse;
 use crate::utils;
 use owo_colors::OwoColorize;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
 
-//   _________
-//  /   _____/__.__. ____   ____
-//  \_____  <   |  |/    \_/ ___\
-//  /        \___  |   |  \  \___
-// /_______  / ____|___|  /\___  >
-//         \/\/         \/     \/
 /// Sync all repositories to default branch and pull
-pub fn sync(arc: &Arc) -> Result<()> {
-    let start_dir = env::current_dir()?;
+pub fn sync(ws: &Workspace) -> Result<()> {
+    let (path_col, branch_col) = utils::line_layout(ws.repos.iter().map(|r| r.path.as_str()));
 
-    for repo in &arc.repos {
-        env::set_current_dir(&arc.path.tld)?;
-        let mut path = PathBuf::from(&arc.path.tld);
-        path.push(&repo.name);
+    for repo in &ws.repos {
+        let dir = ws.repo_dir(repo);
 
-        // If repo doesn't exist, clone it
-        if env::set_current_dir(&path).is_err() {
-            let (relative_path, short_name) = utils::clone_path(&repo.name);
-            env::set_current_dir(&arc.path.tld)?;
-
-            if relative_path != "shallow" {
-                fs::create_dir_all(&relative_path)?;
-                env::set_current_dir(&relative_path)?;
-            }
-
-            print!("{:.<50}", &repo.name);
-            print!("{:.>25} ", &short_name);
+        if !dir.is_dir() {
+            let short_name = utils::short_name(&repo.path);
+            print!("{}", utils::format_path_column(&repo.path, path_col));
+            print!("{}", utils::format_branch_column(short_name, branch_col));
             println!("{}", "cloning".cyan().bold());
 
-            let url = format!("{}/{}.git", &arc.remote.url, &repo.name);
-            let output = Command::new("git")
-                .args(["clone", &url])
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output()
-                .map_err(|e| ArcError::CloneFailed {
-                    repo: repo.name.clone(),
-                    message: e.to_string(),
-                })?;
-
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if utils::FATAL.is_match(&stderr) {
-                eprintln!("{}", stderr.red());
+            if let Err(e) = clone_repo(ws, repo) {
+                eprintln!("{}", e.to_string().red());
             }
-            
-            env::set_current_dir(&arc.path.tld)?;
             continue;
         }
 
-        // Detect default branch for this repo
-        let default_branch = utils::detect_default_branch()
-            .unwrap_or_else(|_| "master".to_string());
+        let default_branch = git::detect_default_branch(&dir);
+        let output = git::run(&dir, &["checkout", &default_branch])?;
+        let checkout_stdout = git::stdout(&output);
+        let checkout_stderr = git::stderr(&output);
 
-        // Checkout default branch
-        let output = Command::new("git")
-            .args(["checkout", &default_branch])
-            .output()?;
+        print!("{}", utils::format_path_column(&repo.path, path_col));
 
-        let checkout_stdout = String::from_utf8_lossy(&output.stdout);
-        let checkout_stderr = String::from_utf8_lossy(&output.stderr);
-
-        print!("{:.<50}", &repo.name);
-
-        if utils::SWITCHED.is_match(&checkout_stderr) {
-            print!("{:.>25} ", format!("switched-to-{}", default_branch));
-        } else if utils::ALREADY.is_match(&checkout_stderr) {
-            print!("{:.>25} ", format!("on-{}", default_branch));
+        if parse::extract_switched(&checkout_stderr).is_some()
+            || parse::extract_switched(&checkout_stdout).is_some()
+        {
+            print!(
+                "{}",
+                utils::format_branch_column(&format!("switched-to-{default_branch}"), branch_col)
+            );
+        } else if parse::already_on_branch(&checkout_stderr)
+            || parse::already_on_branch(&checkout_stdout)
+            || output.status.success()
+        {
+            print!(
+                "{}",
+                utils::format_branch_column(&format!("on-{default_branch}"), branch_col)
+            );
         } else {
-            print!("{:.>25} ", "unable");
+            print!("{}", utils::format_branch_column("unable", branch_col));
             println!("{}", "dirty".red().bold());
             if !checkout_stdout.is_empty() {
-                println!("stdout: {}", checkout_stdout);
+                println!("stdout: {checkout_stdout}");
             }
             if !checkout_stderr.is_empty() {
-                println!("stderr: {}", checkout_stderr);
+                println!("stderr: {checkout_stderr}");
             }
             continue;
         }
 
-        // Pull changes
-        let pull_output = Command::new("git")
-            .arg("pull")
-            .output()?;
-        let pull_stdout = String::from_utf8_lossy(&pull_output.stdout);
-        let pull_stderr = String::from_utf8_lossy(&pull_output.stderr);
-
-        if utils::UP_TO_DATE.is_match(&pull_stdout) {
-            println!("{}", "up-to-date".green().bold());
-        } else if utils::UPDATING.is_match(&pull_stdout) {
-            println!("{}", "updating".green().bold());
-            print!("{}", pull_stdout);
-        } else if utils::CONFLICT.is_match(&pull_stdout) {
-            println!("{}", "conflict".yellow().bold());
-            print!("{}", pull_stdout);
-        } else if !pull_stderr.is_empty() {
-            println!("{}", "unable".red().bold());
-            print!("{}", pull_stderr);
-        } else {
-            println!("{}", "ok".green());
-        }
+        let pull_output = git::run(&dir, &["pull"])?;
+        let pull_stdout = git::stdout(&pull_output);
+        let pull_stderr = git::stderr(&pull_output);
+        print_pull_result(
+            parse::classify_pull(&pull_stdout, &pull_stderr),
+            &pull_stdout,
+            &pull_stderr,
+        );
     }
-    
-    env::set_current_dir(start_dir)?;
+
     Ok(())
-
-    // ---->>>----- possibly make more threads
-    // use std::thread;
-    // use std::time::Duration;
-
-    // let original_thread = thread::spawn(|| {
-    // let _detached_thread = thread::spawn(|| {
-    //     // Here we sleep to make sure that the first thread returns before.
-    //     thread::sleep(Duration::from_millis(10));
-    //     // This will be called, even though the JoinHandle is dropped.
-    //     println!("♫ Still alive ♫");
-    // });
-    // });
-
-    // original_thread.join().expect("The thread being joined has panicked");
-    // println!("Original thread is joined.");
-
-    // // We make sure that the new thread has time to run, before the main
-    // // thread returns.
-
-    // thread::sleep(Duration::from_millis(1000));
 }

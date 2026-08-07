@@ -1,21 +1,30 @@
 image: registry.gitlab.com/krakjn/arc
 
 stages:
+  - check
   - build
 
-build-nix:
+check:
+  stage: check
+  script:
+    - rustc --version
+    - cargo fmt --check
+    - cargo clippy --all-targets -- -D warnings
+    - cargo test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+build-release:
   stage: build
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
-
   script:
     - cargo build --release
     - chmod 755 target/release/arc
-    - cp target/release/arc config/arc.json .
-
+    - cp target/release/arc config/arc.toml .
   artifacts:
-    name: 'arc-$CI_COMMIT_TAG'
+    name: "arc-$CI_COMMIT_TAG"
     paths:
       - arc
-      - arc.json
-
+      - arc.toml

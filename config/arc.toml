@@ -1,0 +1,4 @@
+[[project]]
+path = "path/arc"
+url = "http://domain"
+dependencies = []

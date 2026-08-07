@@ -1,23 +1,32 @@
-use crate::defs::Arc;
+use crate::cmds;
+use crate::config;
 use crate::error::Result;
-use crate::{arc, cmds};
-use clap::{Parser, Subcommand};
-use std::env;
+use clap::{CommandFactory, Parser, Subcommand};
+use std::path::PathBuf;
 
 /// Arc - Aggregate Repository Control
-/// 
+///
 /// The bridge across repositories
 #[derive(Parser, Debug)]
 #[command(name = "arc")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "The bridge across repositories", long_about = None)]
 struct Cli {
+    /// Path to arc.toml (skips upward search)
+    #[arg(long = "config", value_name = "PATH", global = true)]
+    config: Option<PathBuf>,
+
     /// Invoke any command across all repos
     #[arg(short = 'c', num_args = 1.., value_name = "COMMAND")]
     cmd: Option<Vec<String>>,
 
     /// Invoke any git command across all repos
-    #[arg(short = 'g', num_args = 1.., value_name = "COMMAND", conflicts_with = "cmd")]
+    #[arg(
+        short = 'g',
+        num_args = 1..,
+        value_name = "COMMAND",
+        conflicts_with = "cmd"
+    )]
     gcmd: Option<Vec<String>>,
 
     #[command(subcommand)]
@@ -28,36 +37,36 @@ struct Cli {
 enum Commands {
     /// Print contact info and purpose of arc
     Info,
-    
-    /// Initialize all repos defined in arc.json
+
+    /// Initialize all repos defined in arc.toml
     Init,
-    
+
     /// Fetch and merge on current branch
     Pull,
-    
-    /// Show status of all repos in arc.json
+
+    /// Show status of all repos in arc.toml
     Status {
         /// Show more detailed information
         #[arg(short, long)]
         verbose: bool,
     },
-    
+
     /// Checks out all dependent repos on same branch
     Checkout {
         /// Branch name to checkout
         branch: String,
-        
+
         /// Create a new branch
         #[arg(short = 'b')]
         new: bool,
     },
-    
+
     /// Display current configuration
     Show,
-    
+
     /// Checkout default branch and pull
     Sync,
-    
+
     /// Reset worktree to origin default branch
     Reset {
         /// Remove cached changes
@@ -66,77 +75,59 @@ enum Commands {
     },
 }
 
-/// Parse command line arguments and execute appropriate command
-pub fn parse(arc_instance: &mut Arc) -> Result<()> {
-    let argv: Vec<String> = env::args().collect();
+/// Parse CLI and run the selected command.
+pub fn run() -> Result<()> {
+    let cli = Cli::parse();
+    let config_path = cli.config.as_deref();
 
-    // Handle special cases where we pass through args to git/commands
-    if argv.len() > 1 {
-        if &argv[1] == "-c" || &argv[1] == "-g" {
-            arc::load_arc(arc_instance)?;
-            if &argv[1] == "-g" {
-                return cmds::all(arc_instance, true, &argv);
-            } else {
-                return cmds::all(arc_instance, false, &argv);
-            }
-        }
+    if let Some(args) = cli.gcmd.as_ref() {
+        let ws = config::load(config_path)?;
+        return cmds::all(&ws, true, args);
     }
 
-    let cli = Cli::parse();
-
-    // Handle -c and -g flags (for command execution across repos)
-    if cli.cmd.is_some() || cli.gcmd.is_some() {
-        arc::load_arc(arc_instance)?;
-        let is_git = cli.gcmd.is_some();
-        let cmd_vec = if is_git {
-            cli.gcmd.as_ref().unwrap()
-        } else {
-            cli.cmd.as_ref().unwrap()
-        };
-        
-        // Build argv-like vec for compatibility with cmds::all
-        let mut argv_like = vec![String::new(), if is_git { "-g".to_string() } else { "-c".to_string() }];
-        argv_like.extend(cmd_vec.clone());
-        return cmds::all(arc_instance, is_git, &argv_like);
+    if let Some(args) = cli.cmd.as_ref() {
+        let ws = config::load(config_path)?;
+        return cmds::all(&ws, false, args);
     }
 
     match cli.command {
         Some(Commands::Info) => {
-            arc::print_info();
+            config::print_info();
             Ok(())
         }
         Some(Commands::Init) => {
-            arc::load_arc(arc_instance)?;
-            cmds::init(arc_instance)
+            let ws = config::load(config_path)?;
+            cmds::init(&ws)
         }
         Some(Commands::Pull) => {
-            arc::load_arc(arc_instance)?;
-            cmds::pull(arc_instance)
+            let ws = config::load(config_path)?;
+            cmds::pull(&ws)
         }
         Some(Commands::Status { verbose }) => {
-            arc::load_arc(arc_instance)?;
-            cmds::status(arc_instance, verbose)
+            let ws = config::load(config_path)?;
+            cmds::status(&ws, verbose)
         }
         Some(Commands::Checkout { branch, new }) => {
-            arc::load_arc(arc_instance)?;
-            cmds::checkout(arc_instance, new, &branch)
+            let ws = config::load(config_path)?;
+            cmds::checkout(&ws, new, &branch)
         }
         Some(Commands::Show) => {
-            arc::load_arc(arc_instance)?;
-            arc::show_json(arc_instance);
+            let ws = config::load(config_path)?;
+            config::show(&ws);
             Ok(())
         }
         Some(Commands::Sync) => {
-            arc::load_arc(arc_instance)?;
-            cmds::sync(arc_instance)
+            let ws = config::load(config_path)?;
+            cmds::sync(&ws)
         }
         Some(Commands::Reset { sanitize }) => {
-            arc::load_arc(arc_instance)?;
-            cmds::reset(arc_instance, sanitize)
+            let ws = config::load(config_path)?;
+            cmds::reset(&ws, sanitize)
         }
         None => {
-            // No subcommand provided, print help
-            println!("Run 'arc --help' for usage information");
+            let mut cmd = Cli::command();
+            cmd.print_help()?;
+            println!();
             Ok(())
         }
     }

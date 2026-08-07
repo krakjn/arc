@@ -1,22 +1,13 @@
-use crate::defs::*;
+use crate::defs::Workspace;
 use crate::error::{ArcError, Result};
+use crate::git;
+use crate::parse;
 use crate::utils;
 use owo_colors::OwoColorize;
-use std::env;
 use std::io::{self, Write};
-use std::path::PathBuf;
-use std::process::Command;
 
-// __________                      __
-// \______   \ ____   ______ _____/  |_
-//  |       _// __ \ /  ___// __ \   __\
-//  |    |   \  ___/ \___ \\  ___/|  |
-//  |____|_  /\___  >____  >\___  >__|
-//         \/     \/     \/     \/
 /// Reset all repositories to origin default branch
-pub fn reset(arc: &Arc, sanitize: bool) -> Result<()> {
-    let start_dir = env::current_dir()?;
-
+pub fn reset(ws: &Workspace, sanitize: bool) -> Result<()> {
     println!("{}", "!!!!! WARNING !!!!!".yellow().bold().on_yellow());
     println!("This will reset all project folders to remote's HEAD on default branch");
     print!("ALL edits will be ");
@@ -27,72 +18,47 @@ pub fn reset(arc: &Arc, sanitize: bool) -> Result<()> {
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
 
-    let do_it = matches!(
-        input.to_ascii_lowercase().trim(),
-        "y" | "yes"
-    );
-
+    let do_it = matches!(input.to_ascii_lowercase().trim(), "y" | "yes");
     if !do_it {
         println!("Aborting");
-        return Ok(());
+        return Err(ArcError::Aborted);
     }
 
-    for repo in &arc.repos {
-        env::set_current_dir(&arc.path.tld)?;
-        let mut path = PathBuf::from(&arc.path.tld);
-        path.push(&repo.name);
+    let path_col = utils::path_column_width(ws.repos.iter().map(|r| r.path.as_str()));
 
-        if env::set_current_dir(&path).is_err() {
-            eprintln!("{} {}", "Cannot find directory:".red().underline(), &repo.name);
-            env::set_current_dir(&arc.path.tld)?;
+    for repo in &ws.repos {
+        let dir = ws.repo_dir(repo);
+        if !dir.is_dir() {
+            eprintln!(
+                "{} {}",
+                "Cannot find directory:".red().underline(),
+                &repo.path
+            );
             continue;
         }
 
-        print!("{:.<50}", &repo.name);
+        print!("{}", utils::format_path_column(&repo.path, path_col));
 
-        // Detect default branch for this repo
-        let default_branch = utils::detect_default_branch()
-            .unwrap_or_else(|_| "master".to_string());
-        let origin_branch = format!("origin/{}", default_branch);
+        let default_branch = git::detect_default_branch(&dir);
+        let origin_branch = format!("origin/{default_branch}");
 
         if sanitize {
-            // Remove cached files
-            let _ = Command::new("git")
-                .args(["rm", "--cached", "-r", "."])
-                .output();
-
+            let _ = git::run(&dir, &["rm", "--cached", "-r", "."]);
             print!("{} ", "sanitized".cyan().bold());
-            print!("{} ", "now at->".yellow());
+        }
 
-            let output = Command::new("git")
-                .args(["reset", "--hard", &origin_branch])
-                .output()
-                .map_err(|e| ArcError::ResetFailed(e.to_string()))?;
-            
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(caps) = utils::RESET_REGEX.captures(&stdout) {
-                println!("{}", caps.get(1).unwrap().as_str());
-            } else {
-                println!("{}", "done".green());
-            }
+        print!("{} ", "now at->".yellow());
+
+        let output = git::run(&dir, &["reset", "--hard", &origin_branch])
+            .map_err(|e| ArcError::ResetFailed(e.to_string()))?;
+        let stdout = git::stdout(&output);
+
+        if let Some(target) = parse::extract_reset_target(&stdout) {
+            println!("{target}");
         } else {
-            // Regular reset
-            let output = Command::new("git")
-                .args(["reset", "--hard", &origin_branch])
-                .output()
-                .map_err(|e| ArcError::ResetFailed(e.to_string()))?;
-            
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            print!("{} ", "now at->".yellow());
-            
-            if let Some(caps) = utils::RESET_REGEX.captures(&stdout) {
-                println!("{}", caps.get(1).unwrap().as_str());
-            } else {
-                println!("{}", "done".green());
-            }
+            println!("{}", "done".green());
         }
     }
-    
-    env::set_current_dir(start_dir)?;
+
     Ok(())
 }
