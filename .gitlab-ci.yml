@@ -3,7 +3,7 @@ workflow:
     on_new_commit: interruptible
   rules:
     - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_MESSAGE =~ /chore[:] bump to/
+    - if: $CI_COMMIT_MESSAGE =~ /chore[:] bump to/ && $CI_COMMIT_BRANCH
       when: never
     - if: $CI_COMMIT_BRANCH
 
@@ -20,9 +20,6 @@ stages:
 variables:
   CARGO_TERM_COLOR: always
 
-# ---------------------------------------------------------------------------
-# Branches and tags
-# ---------------------------------------------------------------------------
 test:linux:
   stage: test
   script:
@@ -45,9 +42,6 @@ build:linux-amd64:
     paths:
       - arc-linux-amd64
 
-# ---------------------------------------------------------------------------
-# Merge into default = push to default branch (not merge_request_event).
-# ---------------------------------------------------------------------------
 bump:
   stage: bump
   resource_group: bump
@@ -73,14 +67,13 @@ bump:
       git add -u
       git commit -m "chore: bump to $(bump print)"
       bump tag
-      git push origin HEAD:"${CI_DEFAULT_BRANCH}" --follow-tags
+      git push origin "HEAD:${CI_DEFAULT_BRANCH}" --follow-tags
 
-# ---------------------------------------------------------------------------
-# Tag pipeline only — attach build artifacts with glab
-# ---------------------------------------------------------------------------
 release:
   stage: release
   image: registry.gitlab.com/gitlab-org/cli:latest
+  variables:
+    GLAB_ENABLE_CI_AUTOLOGIN: "true"
   inherit:
     default: false
   needs:
