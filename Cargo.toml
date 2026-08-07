@@ -1,6 +1,6 @@
 [package]
 name = "arc"
-version = "0.3.8"
+version = "0.3.9"
 authors = ["tony"]
 edition = "2024"
 rust-version = "1.96"
