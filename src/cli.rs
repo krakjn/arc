@@ -41,6 +41,12 @@ enum Commands {
     /// Initialize all repos defined in arc.toml
     Init,
 
+    /// Write a starter arc.toml to cwd or PATH
+    InitConfig {
+        /// Directory or file path for arc.toml (default: current directory)
+        path: Option<PathBuf>,
+    },
+
     /// Fetch and merge on current branch
     Pull,
 
@@ -99,6 +105,7 @@ pub fn run() -> Result<()> {
             let ws = config::load(config_path)?;
             cmds::init(&ws)
         }
+        Some(Commands::InitConfig { path }) => config::init_config(path.as_deref()),
         Some(Commands::Pull) => {
             let ws = config::load(config_path)?;
             cmds::pull(&ws)

@@ -1,10 +1,14 @@
 use crate::defs::{ArcConfig, ArcPath, ProjectConfig, Repo, Workspace};
 use crate::error::{ArcError, Result};
-use crate::utils;
+use crate::utils::{self, CONFIG_NAME};
 use owo_colors::OwoColorize;
 use std::collections::HashSet;
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Embedded starter template (repo-root `arc.toml`).
+const ARC_TOML_TEMPLATE: &str = include_str!("../arc.toml");
 
 /// Load workspace from `--config` or upward `arc.toml` search.
 pub fn load(config_override: Option<&Path>) -> Result<Workspace> {
@@ -88,18 +92,65 @@ pub fn print_info() {
 \\____|____/____|___/\\________/  C_ontrol
 
 -- The bridge across repositories --
-The purpose of this tool is to help larger projects based on git have
-a smarter way of checking out projects especially if those projects
-have dependencies. Once those dependencies are known to arc, then arc
-will handle the rest. Dependent projects will all be checked out to
-the same branch, that way you don't have to worry about unrelated
-histories ever again.
-
-Submit issues through GitLab to:
-    http://domain/path/arc
-
-The simplest solution, is the best solution - Tony Bright"
+The purpose of this tool is to help maintainers of 
+multiple repositories keep tabs on all of them at once,
+especially if there is inter-dependence between them.
+Dependent repositories will all be checked out to the
+same branch, that way you don't have to worry about
+unrelated histories ever again."
     );
+}
+
+/// Write a starter `arc.toml` to cwd or `path`.
+///
+/// - `None` → `./arc.toml`
+/// - directory (or path without `.toml`) → `path/arc.toml`
+/// - path ending in `.toml` → that file
+pub fn init_config(path: Option<&Path>) -> Result<()> {
+    let target = resolve_init_config_path(path)?;
+    if target.exists() {
+        return Err(ArcError::ConfigValidation(format!(
+            "refusing to overwrite existing file '{}'",
+            target.display()
+        )));
+    }
+    if let Some(parent) = target.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&target, ARC_TOML_TEMPLATE)?;
+    println!(
+        "{} wrote {}",
+        ">>>".cyan().bold(),
+        target.display().to_string().green()
+    );
+    Ok(())
+}
+
+fn resolve_init_config_path(path: Option<&Path>) -> Result<PathBuf> {
+    let base = match path {
+        Some(p) if p.as_os_str().is_empty() => env::current_dir()?,
+        Some(p) => p.to_path_buf(),
+        None => env::current_dir()?,
+    };
+
+    let is_toml = base
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("toml"));
+
+    if is_toml {
+        Ok(base)
+    } else if base.is_file() {
+        Err(ArcError::ConfigValidation(format!(
+            "path '{}' exists and is not a .toml file",
+            base.display()
+        )))
+    } else {
+        // Directory, or a path we will treat as a directory to create.
+        Ok(base.join(CONFIG_NAME))
+    }
 }
 
 /// Display loaded configuration.
@@ -189,5 +240,35 @@ dependencies = []
     fn rejects_empty_config() {
         let cfg: ArcConfig = toml::from_str("").unwrap();
         assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn init_config_writes_template() {
+        let dir = env::temp_dir().join(format!("arc-init-config-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        init_config(Some(&dir)).unwrap();
+        let written = fs::read_to_string(dir.join(CONFIG_NAME)).unwrap();
+        assert_eq!(written, ARC_TOML_TEMPLATE);
+        assert!(validate(&toml::from_str::<ArcConfig>(&written).unwrap()).is_ok());
+
+        let err = init_config(Some(&dir)).unwrap_err().to_string();
+        assert!(err.contains("refusing to overwrite"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn init_config_accepts_explicit_toml_path() {
+        let dir = env::temp_dir().join(format!("arc-init-config-file-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("custom.toml");
+
+        init_config(Some(&file)).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), ARC_TOML_TEMPLATE);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

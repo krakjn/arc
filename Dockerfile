@@ -10,7 +10,7 @@ RUN <<TOOLCHAIN
 rustup component add rustfmt clippy
 rustup target add x86_64-unknown-linux-musl
 rustup target add x86_64-pc-windows-gnu
-<<TOOLCHAIN
+TOOLCHAIN
 
 # autobumper
 RUN curl -fsSL https://raw.githubusercontent.com/krakjn/bump/main/install/get_bump.sh | sh
