@@ -18,6 +18,8 @@ elseif ($env:CI_JOB_TOKEN) { $headers['JOB-TOKEN'] = $env:CI_JOB_TOKEN }
 function Die($msg) { Write-Host "[ERROR] $msg" -ForegroundColor Red; exit 1 }
 function Info($msg) { Write-Host "[INFO] $msg" }
 
+Die "CI does not publish Windows binaries — build from source (cargo build --release)"
+
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
   'AMD64' { 'amd64' }
   'ARM64' { 'arm64' }

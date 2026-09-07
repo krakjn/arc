@@ -1,53 +1,76 @@
 use crate::defs::Workspace;
-use crate::error::{ArcError, Result};
-use crate::git;
+use crate::error::{ArcError, CommandOp, Result};
+use crate::git::{self, StdioMode};
 use crate::parse::{self, PullResult};
+use crate::run::{MissingDir, RunOpts, for_each_repo};
 use crate::utils;
 use owo_colors::OwoColorize;
 
 /// Pull changes from remote for all repositories
-pub fn pull(ws: &Workspace) -> Result<()> {
-    let (path_col, branch_col) = utils::line_layout(ws.repos.iter().map(|r| r.path.as_str()));
-
-    for repo in &ws.repos {
-        let dir = ws.repo_dir(repo);
-        if !dir.is_dir() {
-            eprintln!(
-                "{} {}",
-                "Cannot find directory:".red().underline(),
-                &repo.path
-            );
-            continue;
-        }
-
-        let status = git::run(&dir, &["status", "-bs"])
-            .map_err(|e| ArcError::CommandFailed(e.to_string()))?;
+pub fn pull(ws: &Workspace, opts: &RunOpts) -> Result<()> {
+    for_each_repo(ws, opts, MissingDir::Fail, |ctx| {
+        let status = git::run(&ctx.dir, &["status", "-bs"], StdioMode::Capture).map_err(|e| {
+            ArcError::command(CommandOp::Pull, Some(ctx.repo.path.clone()), e.to_string())
+        })?;
         let branchout = git::stdout(&status);
 
-        print!("{}", utils::format_path_column(&repo.path, path_col));
-
         let Some(header) = parse::parse_branch_header(&branchout) else {
-            println!(
-                "{}",
-                utils::format_branch_column("not on a branch?", branch_col)
-            );
-            continue;
+            ctx.emit(|| {
+                print!(
+                    "{}",
+                    utils::format_path_column(&ctx.repo.path, ctx.path_col)
+                );
+                println!(
+                    "{}",
+                    utils::format_branch_column("not on a branch?", ctx.branch_col)
+                );
+            });
+            return Ok(());
         };
 
-        print!("{}", utils::format_branch_column(&header.name, branch_col));
         if !header.tracked {
-            println!("{}", "untracked".magenta().bold());
-            continue;
+            ctx.emit(|| {
+                print!(
+                    "{}",
+                    utils::format_path_column(&ctx.repo.path, ctx.path_col)
+                );
+                print!(
+                    "{}",
+                    utils::format_branch_column(&header.name, ctx.branch_col)
+                );
+                println!("{}", "no-upstream".magenta().bold());
+            });
+            return Ok(());
         }
 
-        let output = git::run(&dir, &["pull"]).map_err(|e| ArcError::PullFailed(e.to_string()))?;
+        let output = git::run(&ctx.dir, &["pull"], StdioMode::Capture).map_err(|e| {
+            ArcError::command(CommandOp::Pull, Some(ctx.repo.path.clone()), e.to_string())
+        })?;
         let stdout = git::stdout(&output);
         let stderr = git::stderr(&output);
+        let result = parse::classify_pull(output.status.success(), &stdout, &stderr);
 
-        print_pull_result(parse::classify_pull(&stdout, &stderr), &stdout, &stderr);
-    }
+        ctx.emit(|| {
+            print!(
+                "{}",
+                utils::format_path_column(&ctx.repo.path, ctx.path_col)
+            );
+            print!(
+                "{}",
+                utils::format_branch_column(&header.name, ctx.branch_col)
+            );
+            print_pull_result(result, &stdout, &stderr);
+        });
 
-    Ok(())
+        if matches!(result, PullResult::Unable | PullResult::Conflict) {
+            return Err(ArcError::command(
+                CommandOp::Pull,
+                Some(ctx.repo.path.clone()),
+                if stderr.is_empty() { stdout } else { stderr },
+            ));
+        }
+        Ok(())
+    })
 }
 
 pub(crate) fn print_pull_result(result: PullResult, stdout: &str, stderr: &str) {

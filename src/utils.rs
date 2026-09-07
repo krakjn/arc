@@ -1,11 +1,15 @@
 use crate::error::{ArcError, Result};
 use std::env;
-use std::path::{Path, PathBuf};
+use std::io::IsTerminal;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static USE_COLOR: AtomicBool = AtomicBool::new(true);
 
 pub const CONFIG_NAME: &str = "arc.toml";
 
 /// Resolve a project path against the config directory (`tld`).
-/// Absolute paths are kept as-is; relative paths (including `..`) join onto `tld`.
+/// Absolute paths are kept as-is; relative paths join onto `tld`.
 pub fn resolve_repo_path(tld: &Path, path: &str) -> PathBuf {
     let p = Path::new(path);
     if p.is_absolute() {
@@ -27,12 +31,39 @@ pub fn clone_destination(tld: &Path, path: &str) -> (PathBuf, String) {
     (parent, short)
 }
 
-/// Short name of a path (`"a/b/c"` / `"../arc"` -> `"c"` / `"arc"`).
+/// Short name of a path (`"a/b/c"` → `"c"`).
 pub fn short_name(path: &str) -> &str {
     Path::new(path)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(path)
+}
+
+/// True if `path` contains a `..` component.
+pub fn path_has_parent_dir(path: &str) -> bool {
+    Path::new(path)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+}
+
+/// True if dest looks like an existing git repository.
+pub fn is_git_repo(path: &Path) -> bool {
+    path.join(".git").exists()
+}
+
+/// `url` already names a repo (ssh or http(s) with a path beyond the host).
+pub fn looks_like_full_repo_url(url: &str) -> bool {
+    let url = url.trim();
+    if url.starts_with("git@") || url.starts_with("ssh://") {
+        return true;
+    }
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    if let Some(rest) = rest {
+        return rest.split_once('/').is_some_and(|(_, p)| !p.is_empty());
+    }
+    false
 }
 
 /// Walk parents from `start` looking for `arc.toml`.
@@ -50,13 +81,17 @@ pub fn find_config(start: &Path) -> Result<(PathBuf, PathBuf)> {
 }
 
 /// Resolve config from `--config` or upward search from CWD.
+/// A directory `--config` means `dir/arc.toml`.
 pub fn resolve_config(config_override: Option<&Path>) -> Result<(PathBuf, PathBuf)> {
     if let Some(path) = config_override {
-        let path = if path.is_absolute() {
+        let mut path = if path.is_absolute() {
             path.to_path_buf()
         } else {
             env::current_dir()?.join(path)
         };
+        if path.is_dir() {
+            path = path.join(CONFIG_NAME);
+        }
         if !path.is_file() {
             return Err(ArcError::ConfigNotFound);
         }
@@ -138,14 +173,6 @@ where
     (path_col, branch_col)
 }
 
-/// Path column only (for commands that do not print a branch field).
-pub fn path_column_width<'a, I>(paths: I) -> usize
-where
-    I: IntoIterator<Item = &'a str>,
-{
-    line_layout(paths).0
-}
-
 /// Format `path` into `col` width.
 /// - Fits: pad with dots (longest path gets ~10).
 /// - Too narrow: keep path suffix + exactly two dots (`../som..STATUS`).
@@ -178,14 +205,34 @@ fn suffix_chars(s: &str, max_chars: usize) -> String {
     s.chars().skip(count - max_chars).collect()
 }
 
-/// Pad `name` with dots to at least `width` columns (never underflows).
-pub fn dotted_prefix(name: &str, width: usize) -> String {
-    format_path_column(name, width)
+/// Apply color override from `--color` / `NO_COLOR` / TTY.
+pub fn apply_color(choice: clap::ColorChoice) {
+    let on = match choice {
+        clap::ColorChoice::Always => true,
+        clap::ColorChoice::Never => false,
+        clap::ColorChoice::Auto => {
+            env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal()
+        }
+    };
+    USE_COLOR.store(on, Ordering::Relaxed);
+    owo_colors::set_override(on);
 }
 
-/// Leading dots so that `dots + label` fills `width`.
-pub fn leading_dots(label: &str, width: usize) -> String {
-    ".".repeat(width.saturating_sub(label.chars().count()))
+pub fn use_color() -> bool {
+    USE_COLOR.load(Ordering::Relaxed)
+}
+
+/// Apply a style only when color is enabled.
+pub fn paint(s: &str, style: impl FnOnce(&str) -> String) -> String {
+    if use_color() { style(s) } else { s.to_string() }
+}
+
+/// Default `--jobs` (available parallelism, at least 1).
+pub fn default_jobs() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .max(1)
 }
 
 #[cfg(test)]
@@ -195,21 +242,12 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn resolve_relative_and_parent() {
+    fn resolve_relative_and_absolute() {
         let tld = PathBuf::from("/ws/arc");
         assert_eq!(
             resolve_repo_path(&tld, "path/repo"),
             PathBuf::from("/ws/arc/path/repo")
         );
-        assert_eq!(
-            resolve_repo_path(&tld, "../jetsam"),
-            PathBuf::from("/ws/arc/../jetsam")
-        );
-    }
-
-    #[test]
-    fn resolve_absolute() {
-        let tld = PathBuf::from("/ws/arc");
         assert_eq!(
             resolve_repo_path(&tld, "/opt/repo"),
             PathBuf::from("/opt/repo")
@@ -217,11 +255,28 @@ mod tests {
     }
 
     #[test]
-    fn clone_destination_parent() {
-        let tld = PathBuf::from("/ws/arc");
-        let (parent, short) = clone_destination(&tld, "../jetsam");
-        assert_eq!(parent, PathBuf::from("/ws/arc/.."));
-        assert_eq!(short, "jetsam");
+    fn parent_dir_detection() {
+        assert!(path_has_parent_dir("../jetsam"));
+        assert!(path_has_parent_dir("foo/../bar"));
+        assert!(!path_has_parent_dir("path/arc"));
+        assert!(!path_has_parent_dir("/opt/repo"));
+    }
+
+    #[test]
+    fn clone_destination_nested() {
+        let tld = PathBuf::from("/ws");
+        let (parent, short) = clone_destination(&tld, "path/arc");
+        assert_eq!(parent, PathBuf::from("/ws/path"));
+        assert_eq!(short, "arc");
+    }
+
+    #[test]
+    fn full_repo_url_detection() {
+        assert!(looks_like_full_repo_url("https://host/org/repo"));
+        assert!(looks_like_full_repo_url("git@host:org/repo"));
+        assert!(looks_like_full_repo_url("ssh://git@host/org/repo"));
+        assert!(!looks_like_full_repo_url("http://domain"));
+        assert!(!looks_like_full_repo_url("https://github.com"));
     }
 
     #[test]
@@ -234,10 +289,8 @@ mod tests {
 
     #[test]
     fn path_two_dots_only_when_truncated() {
-        // Path longer than col - 2 → suffix + exactly ".."
         assert_eq!(format_path_column("../some/path", 8), "e/path..");
         assert_eq!(format_path_column("abcdefghij", 10), "cdefghij..");
-        // Still fits with room for 2+ pad dots → not truncated
         assert_eq!(format_path_column("ab", 6), "ab....");
     }
 
@@ -253,25 +306,41 @@ mod tests {
 
     #[test]
     fn find_config_walks_up() {
-        let tmp = tempfile_dir();
-        let nested = tmp.join("a/b");
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("a/b");
         fs::create_dir_all(&nested).unwrap();
-        let mut f = fs::File::create(tmp.join(CONFIG_NAME)).unwrap();
+        let mut f = fs::File::create(tmp.path().join(CONFIG_NAME)).unwrap();
         writeln!(
             f,
-            "[[project]]\npath = \"x\"\nurl = \"http://x\"\ndependencies = []"
+            "[[repo]]\npath = \"x\"\nurl = \"http://x\"\nremote = \"origin\"\ndependencies = []"
         )
         .unwrap();
 
         let (tld, cfg) = find_config(&nested).unwrap();
-        assert_eq!(tld, tmp);
-        assert_eq!(cfg, tmp.join(CONFIG_NAME));
+        assert_eq!(tld, tmp.path());
+        assert_eq!(cfg, tmp.path().join(CONFIG_NAME));
     }
 
-    fn tempfile_dir() -> PathBuf {
-        let dir = env::temp_dir().join(format!("arc-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    #[test]
+    fn resolve_config_accepts_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(CONFIG_NAME),
+            "[[repo]]\npath = \"x\"\nurl = \"http://x\"\nremote = \"origin\"\n",
+        )
+        .unwrap();
+        let (tld, cfg) = resolve_config(Some(tmp.path())).unwrap();
+        assert_eq!(tld, tmp.path());
+        assert_eq!(cfg, tmp.path().join(CONFIG_NAME));
+    }
+
+    #[test]
+    fn color_never_disables_paint() {
+        apply_color(clap::ColorChoice::Never);
+        assert!(!use_color());
+        assert_eq!(paint("x", |s| format!("styled-{s}")), "x");
+        apply_color(clap::ColorChoice::Always);
+        assert!(use_color());
+        assert_eq!(paint("x", |s| format!("styled-{s}")), "styled-x");
     }
 }

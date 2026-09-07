@@ -36,13 +36,14 @@ command -v curl >/dev/null 2>&1 || die "curl is required"
 platform=$(uname -m)-$(uname -s | cut -d- -f1)
 case "$platform" in
   *-MINGW64_NT|*-MSYS_NT|*-CYGWIN_NT)
-    die "Native Windows is not supported — use install/get_arc.ps1"
+    die "CI does not publish Windows binaries — build from source (cargo build --release)"
+    ;;
+  x86_64-Darwin|arm64-Darwin)
+    die "CI does not publish macOS binaries yet — build from source (cargo build --release)"
     ;;
   x86_64-Linux)   os=linux; arch=amd64 ;;
   aarch64-Linux)  os=linux; arch=arm64 ;;
-  x86_64-Darwin)  os=macos; arch=amd64 ;;
-  arm64-Darwin)   os=macos; arch=arm64 ;;
-  *) die "Unsupported platform: $platform" ;;
+  *) die "Unsupported platform: $platform (CI publishes linux musl amd64/arm64 only)" ;;
 esac
 info "Platform: $os/$arch"
 
