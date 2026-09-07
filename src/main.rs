@@ -3,7 +3,10 @@ use owo_colors::OwoColorize;
 
 fn main() {
     if let Err(e) = cli::run() {
-        eprintln!("{} {e}", "Error:".red().bold());
+        eprintln!(
+            "{} {e}",
+            arc::utils::paint("Error:", |s| s.red().bold().to_string())
+        );
         std::process::exit(1);
     }
 }

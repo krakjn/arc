@@ -5,13 +5,12 @@
 #
 # https://github.com/krakjn/bump
 
-prefix = "v"
+prefix = ""
 
-# NOTE: some fields are modified by bump
-#   - mode: "semver" or "calver"
-#   - minor|patch: optional, can be removed if not needed
+# NOTE: define your own keys! (bump respects TOML order = cascade order)
+#   - at least one key is needed
+#   - special keys: "year", "month", "day" are populated based on current calendar date
 [base]
-mode = "semver"
 delimiter = "."
 major = 0
 minor = 3
@@ -32,7 +31,7 @@ separator = "+"
 
 [timestamp]
 format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-08-07 23:17:53 UTC"
+last = "2026-09-07 01:06:24 UTC"
 
 # printed label: shown but never tracked, useful injecting dynamic values
 #  - position: "before-prefix", "after-prefix",

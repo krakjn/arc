@@ -18,64 +18,68 @@ If any one of those answers is a "yes" I suggest you check out `arc`.
 
 ## Install
 
-**Linux / macOS:**
+**Linux (musl amd64 / arm64):**
 
 ```sh
 curl -fsSL https://gitlab.com/ballast-dev/arc/-/raw/main/install/get_arc.sh | sh
 ```
 
-**Windows (PowerShell):**
+Or download `arc-linux-amd64` / `arc-linux-arm64` from [releases](https://gitlab.com/ballast-dev/arc/-/releases).
 
-```powershell
-irm https://gitlab.com/ballast-dev/arc/-/raw/main/install/get_arc.ps1 | iex
-```
-
-Or download a binary from [releases](https://gitlab.com/ballast-dev/arc/-/releases):
-`arc-linux-amd64`, `arc-macos-arm64`, `arc-macos-amd64`, `arc-windows-amd64.exe`.
+macOS and Windows binaries are not published from CI; build from source with `cargo build --release`.
 
 ## Features:
 
-1. Multi-repo workspace — manage many git repos from one arc.toml
-1. TOML config — per-project path, url, optional remote (default origin), and dependencies
-1. Config discovery — walks up from CWD for arc.toml, or use --config <PATH>
-1. Relative or absolute paths — including ../sibling layouts
-1. Per-project remotes — each project can point at a different host/URL
-1. Dependency-aware checkout — checkout / checkout -b switches deps onto the same branch first
-1. Bird’s-eye status — ahead/behind, dirty/staged/untracked markers; -v for file detail
-1. Terminal-aware layout — path columns pad when wide, truncate with .. when narrow
-1. Bulk pull — pull across every configured repo
-1. Sync to default branch — detect main/master (or origin/HEAD), checkout, pull; clone if missing
-1. Init — clone all projects from config in one shot
-1. Init-config — write a starter `arc.toml` (`arc init-config [PATH]`)
-1. Reset — hard reset to origin/<default>; optional --sanitize clears the index cache
-1. Cross-repo shell — -c <cmd>... runs any command in every repo
-1. Cross-repo git — -g <args>... runs git … in every repo
-1. Show config — pretty-print loaded projects, URLs, and deps
-1. Live config — re-read arc.toml every run (add/remove projects without restart)
+1. Multi-repo workspace — manage many git repos from one `arc.toml`
+1. TOML config — per-repo `path`, `url`, required `remote`, and `dependencies`
+1. Config discovery — walks up from CWD for `arc.toml`, or `--config <PATH>` (file or directory)
+1. Paths next door or below `arc.toml` — relative descendants or absolute; `..` is skipped with a warning
+1. Per-repo remotes — each repo names the remote used for fetch/reset/default-branch
+1. Dependency-aware checkout — `arc checkout` is status for CWD + deps; `arc checkout BRANCH` aligns that tree (`git checkout --track`). A dep without BRANCH stays on HEAD or its default branch. `--repo PATH` selects another tree from any CWD.
+1. Bird’s-eye status — ahead/behind, dirty/staged/untracked markers; `-v` for file detail; `--fetch` to refresh
+1. Terminal-aware layout — path columns pad when wide, truncate with `..` when narrow
+1. Bulk pull / fetch / sync — across every configured repo
+1. Clone — clone all repos from config; skips worktrees that already exist
+1. Init — write a starter `arc.toml` (`arc init [PATH]`)
+1. Reset — hard reset to `{remote}/<default>`; `-y/--yes` skips the prompt; `-s/--sanitize` clears the index cache
+1. Cross-repo shell — `-c <cmd>...` runs any command in every repo
+1. Cross-repo git — `-g <args>...` runs `git …` in every repo
+1. `--only PATH [PATH...]` — exact `path` values from `arc.toml`
+1. `--sort` — alphanumeric by `path` (default: listed order in `arc.toml`)
+1. `--jobs N` / `-j` — parallel work (default: CPU count). Streaming commands prefix lines like Compose (`name | …`). Use `--jobs 1` if git asks for credentials.
+1. Show config — pretty-print loaded repos, URLs, and deps
+1. Completions — `arc completions bash|zsh|fish`
+1. Live config — re-read `arc.toml` every run
 
-> NOTE: arc anchors on the location of `arc.toml` (or the path given by `--config`).
+> NOTE: arc anchors on the location of `arc.toml` (or the path given by `--config`). Bare `arc` runs `status`.
 
 ```text
 USAGE:
     arc [OPTIONS] [SUBCOMMAND]
 
 OPTIONS:
-    --config <PATH>        Path to arc.toml (skips upward search)
+    --config <PATH>        Path to arc.toml or the directory that contains it
+    --only <PATH>...       Only these repo paths (exact match)
+    --repo <PATH>          Select a repo by exact path (checkout tree root)
+    --sort                 Alphanumeric by path (default: arc.toml order)
+    -j, --jobs <N>         Parallel jobs (default: CPU count)
+    --color <WHEN>         auto | always | never (also honors NO_COLOR)
     -c <COMMAND>...        Invoke any command across all repos
     -g <COMMAND>...        Invoke any git command across all repos
     -h, --help             Print help
     -V, --version          Print version
 
 SUBCOMMANDS:
-    checkout      Checks out all dependent repos on same branch
+    checkout      Tree status (no args) or align CWD/deps onto BRANCH
+    clone         Clone all repos defined in arc.toml
+    completions   Generate shell completions
+    fetch         Fetch from each repo's configured remote
     help          Print this message or the help of the given subcommand(s)
-    info          Print contact info and purpose of arc
-    init          Initialize all repos defined in arc.toml
-    init-config   Write a starter arc.toml to cwd or PATH
+    init          Write a starter arc.toml to cwd or PATH
     pull          Fetch and merge on current branch
-    reset         Reset worktree to origin default branch (-s/--sanitize)
+    reset         Reset worktree to remote default branch (-s/--sanitize, -y/--yes)
     show          Display current configuration
-    status        Show status of all repos (-v/--verbose)
+    status        Show status of all repos (-v/--verbose, --fetch)
     sync          Checkout default branch and pull
 ```
 
@@ -99,14 +103,15 @@ Pick your poison
 Example:
 
 ```toml
-[[project]]
+[[repo]]
 path = "path/arc"
 url = "http://domain"
+remote = "origin"
 dependencies = []
 
-[[project]]
+[[repo]]
 path = "path/other"
-remote = "upstream"          # optional; default "origin"
+remote = "upstream"
 url = "http://other.domain"
 dependencies = ["path/arc"]
 ```

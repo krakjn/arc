@@ -1,4 +1,5 @@
-[[project]]
+[[repo]]
 path = "path/arc"
 url = "http://domain"
+remote = "origin"
 dependencies = []
