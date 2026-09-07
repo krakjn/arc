@@ -114,8 +114,12 @@ release:
   script:
     - |
       set -euo pipefail
+      # Local files go through POST /uploads, which job tokens cannot call (401).
+      # --use-package-registry uses the generic package API instead (installer path).
       glab release create "$CI_COMMIT_TAG" \
         --name "arc $CI_COMMIT_TAG" \
         --notes "Aggregate Repository Control $CI_COMMIT_TAG" \
+        --use-package-registry \
+        --package-name arc \
         arc-linux-amd64 \
         arc-linux-arm64
