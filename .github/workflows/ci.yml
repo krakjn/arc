@@ -1,0 +1,137 @@
+name: Build and Publish
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ '*' ]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read version
+        id: read
+        run: |
+          version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, windows, macos]
+        arch: [amd64, arm64]
+        include:
+          - platform: linux
+            arch: amd64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            cross_compile: false
+          - platform: linux
+            arch: arm64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            cross_compile: true
+          - platform: windows
+            arch: amd64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            cross_compile: false
+          - platform: windows
+            arch: arm64
+            os: windows-latest
+            target: aarch64-pc-windows-msvc
+            cross_compile: true
+          - platform: macos
+            arch: amd64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            cross_compile: false
+          - platform: macos
+            arch: arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            cross_compile: true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Clippy
+        if: matrix.cross_compile == false && matrix.platform != 'windows'
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests
+        if: matrix.cross_compile == false && matrix.platform != 'windows'
+        run: cargo test
+
+      # arc-<version>-<platform>-<arch>[.exe]
+      - name: Prepare binary for upload
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          STEM: arc-${{ needs.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+        run: |
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            cp "target/${{ matrix.target }}/release/arc.exe" "${STEM}.exe"
+          else
+            cp "target/${{ matrix.target }}/release/arc" "$STEM"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: arc-${{ needs.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: arc-${{ needs.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ./artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p ./release
+          find ./artifacts -name "arc-*" -type f -exec cp {} ./release/ \;
+          ls -la ./release/
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "${{ github.ref_name }}" \
+            --notes "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            ./release/*
+          gh release upload ${{ github.ref_name }} ./release/*

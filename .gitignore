@@ -1,4 +1,5 @@
 /target
+/docs/site/
 **/*.rs.bk
 *.DS_Store
 build/

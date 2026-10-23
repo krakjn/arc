@@ -1,24 +1,32 @@
 # arc installer — Windows (PowerShell 5.1+ / 7+)
 #
 # Usage:
-#   irm https://gitlab.com/ballast-dev/arc/-/raw/main/install/get_arc.ps1 | iex
+#   irm https://raw.githubusercontent.com/krakjn/arc/main/install/get_arc.ps1 | iex
+#   irm ... | iex; .\get_arc.ps1 -Dest 'C:\Tools'
 #
-param([string]$InstallDir = '')
+param(
+  [string]$Dest = "$env:LOCALAPPDATA\Programs\arc",
+  [switch]$Help
+)
+
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$project = 'ballast-dev/arc'
-$projectEnc = [uri]::EscapeDataString($project)
-$apiBase = 'https://gitlab.com/api/v4'
-
-$headers = @{ 'User-Agent' = 'arc-installer' }
-if ($env:GITLAB_TOKEN) { $headers['PRIVATE-TOKEN'] = $env:GITLAB_TOKEN }
-elseif ($env:CI_JOB_TOKEN) { $headers['JOB-TOKEN'] = $env:CI_JOB_TOKEN }
+$repo = 'krakjn/arc'
 
 function Die($msg) { Write-Host "[ERROR] $msg" -ForegroundColor Red; exit 1 }
 function Info($msg) { Write-Host "[INFO] $msg" }
 
-Die "CI does not publish Windows binaries — build from source (cargo build --release)"
+if ($Help) {
+  Write-Host "Usage: $($MyInvocation.MyCommand.Name) [-Dest PATH] [-Help]"
+  Write-Host ''
+  Write-Host "  -Dest PATH   Install arc.exe to PATH (default: $Dest)"
+  exit 0
+}
+
+$headers = @{ 'User-Agent' = 'arc-installer'; 'Accept' = 'application/vnd.github+json' }
+if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
+elseif ($env:GH_TOKEN) { $headers['Authorization'] = "Bearer $($env:GH_TOKEN)" }
 
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
   'AMD64' { 'amd64' }
@@ -28,65 +36,35 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
 if (-not $arch) { Die "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
 Info "Platform: Windows ($arch)"
 
-$asset = "arc-windows-$arch.exe"
+$installDir = [IO.Path]::GetFullPath($Dest)
+$targetPath = Join-Path $installDir 'arc.exe'
+Info "Installing to $targetPath"
 
-# Resolve install target — update in place if arc already exists
-$existing = Get-Command arc -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($existing -and $existing.Source -and (Test-Path $existing.Source)) {
-  $targetPath = [IO.Path]::GetFullPath($existing.Source)
-  $InstallDir = Split-Path $targetPath
-  Info "Updating existing arc at $targetPath"
-} else {
-  if (-not $InstallDir) {
-    $InstallDir = if ($env:RUNNER_TEMP) {
-      Join-Path $env:RUNNER_TEMP 'arc'
-    } else {
-      Join-Path $env:LOCALAPPDATA 'Programs\arc'
-    }
-  }
-  $InstallDir = [IO.Path]::GetFullPath($InstallDir)
-  $targetPath = Join-Path $InstallDir 'arc.exe'
-}
-
-# Fetch latest release tag
-$release = Invoke-RestMethod "$apiBase/projects/$projectEnc/releases/permalink/latest" -Headers $headers
+$release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
 if (-not $release.tag_name) { Die 'Could not resolve latest release.' }
 $tag = $release.tag_name.Trim()
+$ver = if ($tag.StartsWith('v')) { $tag.Substring(1) } else { $tag }
 Info "Latest release: $tag"
 
-# Prefer generic package registry (uploaded by CI)
-$url = "$apiBase/projects/$projectEnc/packages/generic/arc/$tag/$asset"
+$url = "https://github.com/$repo/releases/download/$tag/arc-$ver-windows-$arch.exe"
 Info "Downloading: $url"
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "arc-$([Guid]::NewGuid().ToString('N')).exe"
-try {
-  Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers $headers
-} catch {
-  $url = "https://gitlab.com/$project/-/releases/$tag/downloads/$asset"
-  Info "Retrying: $url"
-  Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers $headers
-}
+Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
 if (-not (Test-Path $tmp) -or (Get-Item $tmp).Length -eq 0) { Die 'Download failed or empty.' }
 
-# Install
-if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
+if (-not (Test-Path $installDir)) { New-Item -ItemType Directory -Path $installDir -Force | Out-Null }
 Move-Item $tmp $targetPath -Force
-Write-Host "[SUCCESS] Installed: $targetPath" -ForegroundColor Green
+Write-Host "[SUCCESS] Installed arc $(& $targetPath --version 2>&1) to $targetPath" -ForegroundColor Green
 
-# PATH registration
 if ($env:GITHUB_PATH) {
-  $InstallDir | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
-} elseif ($env:GITLAB_ENV) {
-  # no-op for GitLab; user PATH below still applies locally
+  $installDir | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
 } else {
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $escaped = [regex]::Escape($InstallDir.TrimEnd('\'))
+  $escaped = [regex]::Escape($installDir.TrimEnd('\'))
   if (-not $userPath -or $userPath -notmatch "(?i)(^|;)$escaped(;|$)") {
-    $newPath = if ($userPath) { "$userPath;$InstallDir" } else { $InstallDir }
+    $newPath = if ($userPath) { "$userPath;$installDir" } else { $installDir }
     [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-    Info "Added to user PATH: $InstallDir"
+    Info "Added to user PATH: $installDir"
   }
 }
-$env:Path += ";$InstallDir"
-
-# Verify
-try { Info (& $targetPath --version 2>&1) } catch { }
+$env:Path += ";$installDir"

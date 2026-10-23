@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page.title }} · arc</title>
+    <meta name="description" content="arc: one arc.toml for every repo you maintain.">
+    <meta property="og:title" content="{{ page.title }} · arc">
+    <meta property="og:description" content="One arc.toml for every repo you maintain, including the ones that depend on each other.">
+    <meta property="og:image" content="https://krakjn.github.io/arc/assets/arc.jpeg">
+    <link rel="icon" type="image/jpeg" href="{{ '/assets/arc.jpeg' | url }}">
+    <link rel="apple-touch-icon" href="{{ '/assets/arc.jpeg' | url }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ '/css/theme.css' | url }}">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/powershell.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/toml.min.js"></script>
+    <script defer src="{{ '/js/site.js' | url }}"></script>
+    <script>
+        (function () {
+            var modes = { checkout: "checkout", sync: "sync", "cross-repo-commands": "g" };
+            var hash = location.hash.replace(/^#/, "");
+            if (!modes[hash]) return;
+            try { sessionStorage.setItem("arc-table-mode", modes[hash]); } catch (err) {}
+            history.replaceState(null, "", location.pathname + location.search);
+        })();
+    </script>
+</head>
+<body data-page="{{ page.url }}"{% if page.url == '/' %} class="home"{% endif %}>
+    <header class="bar">
+        <a class="brand" href="{{ '/' | url }}">
+            <img src="{{ '/assets/arc.jpeg' | url }}" alt="" width="512" height="512">
+            <span>
+                <strong>ARC</strong>
+                <span class="brand-sub">Multi-repo command table</span>
+            </span>
+        </a>
+        <a class="source" href="https://github.com/krakjn/arc">
+            <span data-release>latest</span>
+            <span data-stars>–</span>
+            <span data-forks>–</span>
+        </a>
+        <div class="clock mono" id="clock">TABLE ONLINE</div>
+    </header>
+
+    <div class="room">
+        <section class="stage">
+            <canvas id="table" aria-label="Holographic table of repositories. Drag to rotate."></canvas>
+            <div class="plate" data-install>
+                <div class="plate-label"><span>Install · <span data-install-os>Linux / macOS</span></span><span>1 line</span></div>
+                <div class="plate-row">
+                    <code data-install-cmd>curl -fsSL https://raw.githubusercontent.com/krakjn/arc/main/install/get_arc.sh | sh</code>
+                    <button class="copy" type="button" data-install-copy>Copy</button>
+                </div>
+                <button class="swap" type="button" data-install-swap>Windows instead</button>
+            </div>
+            <div class="hint">Drag to rotate the table</div>
+        </section>
+
+        <aside>
+            <nav class="modes" aria-label="Table">
+                <button type="button" data-mode="status">status</button>
+                <button type="button" data-mode="checkout">checkout</button>
+                <button type="button" data-mode="sync">sync</button>
+                <button type="button" data-mode="g">-c / -g</button>
+                <button type="button" data-mode="config">arc.toml</button>
+                <button type="button" data-mode="flow">workflow</button>
+            </nav>
+            <p class="mode-note" data-mode-note></p>
+            <nav class="pages" aria-label="Pages">
+                <a href="{{ '/commands/' | url }}">Commands</a>
+                <a href="{{ '/config/' | url }}">Configuration</a>
+                <a href="{{ '/workflow/' | url }}">Workflow</a>
+            </nav>
+            {% if page.url != '/' %}
+            <div class="readout">
+                {{ page.html }}
+            </div>
+            {% endif %}
+        </aside>
+    </div>
+    {% if page.url == '/' %}
+    <main class="scroll readout">
+        {{ page.html }}
+    </main>
+    {% endif %}
+
+    <footer class="keel">
+        <span>One config. Every repo.</span>
+        <a href="https://github.com/krakjn/arc">GitHub</a>
+        <a href="https://github.com/krakjn/arc/releases">Releases</a>
+        <a href="https://github.com/krakjn/arc/blob/main/LICENSE">GPL-2.0</a>
+    </footer>
+</body>
+</html>

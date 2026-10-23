@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/arc.jpeg" alt="arc" width="144">
+</p>
+
 ```
    _____ ___________________
   /  _  \\______   \_   ____\
@@ -7,6 +11,8 @@
 ```
 ---
 # The bridge across repositories
+
+Docs: <https://krakjn.github.io/arc/>
 
 ## Why?
 1. Have a bunch of repos you maintain?
@@ -18,15 +24,19 @@ If any one of those answers is a "yes" I suggest you check out `arc`.
 
 ## Install
 
-**Linux (musl amd64 / arm64):**
+**Linux and macOS:**
 
 ```sh
-curl -fsSL https://gitlab.com/ballast-dev/arc/-/raw/main/install/get_arc.sh | sh
+curl -fsSL https://raw.githubusercontent.com/krakjn/arc/main/install/get_arc.sh | sh
 ```
 
-Or download `arc-linux-amd64` / `arc-linux-arm64` from [releases](https://gitlab.com/ballast-dev/arc/-/releases).
+**Windows (PowerShell):**
 
-macOS and Windows binaries are not published from CI; build from source with `cargo build --release`.
+```powershell
+irm https://raw.githubusercontent.com/krakjn/arc/main/install/get_arc.ps1 | iex
+```
+
+Release files are named `arc-<version>-<platform>`, for example `arc-0.4.1-linux-amd64`. The installers pick the one for your machine from the [latest release](https://github.com/krakjn/arc/releases).
 
 ## Features:
 
