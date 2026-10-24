@@ -84,10 +84,10 @@ jobs:
       # arc-<version>-<platform>-<arch>[.exe]
       - name: Prepare binary for upload
         shell: bash
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          STEM: arc-${{ needs.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
         run: |
+          VERSION=$(bump print)
+          STEM="arc-${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}"
+          echo "STEM=$STEM" >> $GITHUB_OUTPUT
           if [[ "${{ matrix.platform }}" == "windows" ]]; then
             cp "target/${{ matrix.target }}/release/arc.exe" "${STEM}.exe"
           else
@@ -97,8 +97,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: arc-${{ needs.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
-          path: arc-${{ needs.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}*
+          name: $STEM
+          path: $STEM*
           if-no-files-found: error
 
   publish:
