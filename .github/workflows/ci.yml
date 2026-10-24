@@ -10,22 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.read.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Read version
-        id: read
-        run: |
-          version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +59,8 @@ jobs:
           targets: ${{ matrix.target }}
           components: clippy
 
+      - uses: krakjn/bump@v9
+
       # x86_64 ld rejects rustc's aarch64-only --fix-cortex-a53-843419.
       - name: Install aarch64 cross linker
         if: matrix.target == 'aarch64-unknown-linux-musl'
@@ -82,7 +69,9 @@ jobs:
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'aarch64-linux-gnu-gcc' || '' }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          bump update Cargo.toml
+          cargo build --release --target ${{ matrix.target }}
 
       - name: Clippy
         if: matrix.cross_compile == false && matrix.platform != 'windows'
