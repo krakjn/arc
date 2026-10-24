@@ -83,6 +83,7 @@ jobs:
 
       # arc-<version>-<platform>-<arch>[.exe]
       - name: Prepare binary for upload
+        id: prepare
         shell: bash
         run: |
           VERSION=$(bump print)
@@ -97,8 +98,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: $STEM
-          path: $STEM*
+          name: ${{ steps.prepare.outputs.STEM }}
+          path: ${{ steps.prepare.outputs.STEM }}*
           if-no-files-found: error
 
   publish:
