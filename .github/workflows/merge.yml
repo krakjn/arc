@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   bump:
@@ -23,6 +24,7 @@ jobs:
       - uses: krakjn/bump@v9
 
       - name: bump and tag
+        id: release
         env:
           # main tip before merge; diff to HEAD is what the PR landed
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -31,9 +33,22 @@ jobs:
           bump patch --if-changed-from "$BASE"
           bump update Cargo.toml
           git add -u
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git config user.name "arc-ci"
           git config user.email "arc-ci@users.noreply.github.com"
           git commit -m "chore: bump to $(bump print)"
           bump tag
+          TAG=$(git describe --tags --exact-match HEAD)
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           git push origin main --follow-tags
+
+      # GITHUB_TOKEN pushes do not start new workflow runs (including tag push).
+      - name: Trigger release build
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --ref "${{ steps.release.outputs.tag }}"
