@@ -10,7 +10,7 @@ default:
 show:
     #!/usr/bin/env bash
     set -euo pipefail
-    url="http://127.0.0.1:8000/"
+    url="http://127.0.0.1:8080/"
     printf 'docs  %s\n' "$url"
     sh "{{justfile_directory()}}/docs/build.sh" serve &
     pid=$!

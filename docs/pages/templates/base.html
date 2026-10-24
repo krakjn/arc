@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page.title }} · arc</title>
+    <title>{% if page.url == '/' %}The bridge across repositories{% else %}{{ page.title }}{% endif %} · arc</title>
     <meta name="description" content="arc: one arc.toml for every repo you maintain.">
-    <meta property="og:title" content="{{ page.title }} · arc">
+    <meta property="og:title" content="{% if page.url == '/' %}The bridge across repositories{% else %}{{ page.title }}{% endif %} · arc">
     <meta property="og:description" content="One arc.toml for every repo you maintain, including the ones that depend on each other.">
     <meta property="og:image" content="https://krakjn.github.io/arc/assets/arc.jpeg">
     <link rel="icon" type="image/jpeg" href="{{ '/assets/arc.jpeg' | url }}">
@@ -28,21 +28,35 @@
         })();
     </script>
 </head>
-<body data-page="{{ page.url }}"{% if page.url == '/' %} class="home"{% endif %}>
+<body data-page="{{ page.url }}" data-releases="{{ '/releases/' | url }}" data-home="{{ '/' | url }}"{% if page.url == '/' %} class="home"{% endif %}>
     <header class="bar">
-        <a class="brand" href="{{ '/' | url }}">
+        <a class="brand" href="{{ '/' | url }}" data-swap>
             <img src="{{ '/assets/arc.jpeg' | url }}" alt="" width="512" height="512">
             <span>
                 <strong>ARC</strong>
                 <span class="brand-sub">Multi-repo command table</span>
             </span>
         </a>
-        <a class="source" href="https://github.com/krakjn/arc">
-            <span data-release>latest</span>
-            <span data-stars>–</span>
-            <span data-forks>–</span>
-        </a>
-        <div class="clock mono" id="clock">TABLE ONLINE</div>
+        <div class="bar-end">
+            <a class="repo-chip" href="https://github.com/krakjn/arc" title="Go to repository">
+                <img class="repo-chip-icon" src="{{ '/assets/arc.jpeg' | url }}" alt="" width="512" height="512">
+                <span class="repo-chip-meta mono">
+                    <span class="repo-chip-item" data-release-item>
+                        <svg class="repo-chip-glyph" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 3.5a1.5 1.5 0 0 1 1.5-1.5h1.2l.8-.8h3l.8.8H11A1.5 1.5 0 0 1 12.5 3.5v9A1.5 1.5 0 0 1 11 14H3a1.5 1.5 0 0 1-1.5-1.5v-9Zm1.5-.5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H9.6l-.8-.8H6.2l-.8.8H3.5Z"/></svg>
+                        <span data-release>latest</span>
+                    </span>
+                    <span class="repo-chip-item">
+                        <svg class="repo-chip-glyph" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 .5l2.1 4.3 4.7.7-3.4 3.3.8 4.7L8 11.8 3.8 13.5l.8-4.7L1.2 5.5l4.7-.7L8 .5Z"/></svg>
+                        <span data-stars>–</span>
+                    </span>
+                    <span class="repo-chip-item">
+                        <svg class="repo-chip-glyph" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 2.5a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 4 13.5h3v-2H4V4h8v2h2V4a1.5 1.5 0 0 0-1.5-1.5H4Zm5 4.5v2h5.8l-2.4 2.4 1.4 1.4L16 9.5l-2.2-2.2-1.4 1.4 2.4 2.4H9V7H4Z"/></svg>
+                        <span data-forks>–</span>
+                    </span>
+                </span>
+            </a>
+            <div class="clock mono" id="clock">TABLE ONLINE</div>
+        </div>
     </header>
 
     <div class="room">
@@ -60,38 +74,27 @@
         </section>
 
         <aside>
-            <nav class="modes" aria-label="Table">
+            <p class="aside-tagline">One config. Every repo.</p>
+            <p class="nav-label mono" id="nav-label-table">table</p>
+            <nav class="modes" aria-labelledby="nav-label-table">
                 <button type="button" data-mode="status">status</button>
                 <button type="button" data-mode="checkout">checkout</button>
                 <button type="button" data-mode="sync">sync</button>
                 <button type="button" data-mode="g">-c / -g</button>
                 <button type="button" data-mode="config">arc.toml</button>
-                <button type="button" data-mode="flow">workflow</button>
+                <button type="button" data-mode="release">releases</button>
             </nav>
             <p class="mode-note" data-mode-note></p>
-            <nav class="pages" aria-label="Pages">
+            <p class="nav-label mono" id="nav-label-docs">docs</p>
+            <nav class="pages modes-grid" aria-labelledby="nav-label-docs">
                 <a href="{{ '/commands/' | url }}">Commands</a>
                 <a href="{{ '/config/' | url }}">Configuration</a>
                 <a href="{{ '/workflow/' | url }}">Workflow</a>
             </nav>
-            {% if page.url != '/' %}
             <div class="readout">
                 {{ page.html }}
             </div>
-            {% endif %}
         </aside>
     </div>
-    {% if page.url == '/' %}
-    <main class="scroll readout">
-        {{ page.html }}
-    </main>
-    {% endif %}
-
-    <footer class="keel">
-        <span>One config. Every repo.</span>
-        <a href="https://github.com/krakjn/arc">GitHub</a>
-        <a href="https://github.com/krakjn/arc/releases">Releases</a>
-        <a href="https://github.com/krakjn/arc/blob/main/LICENSE">GPL-2.0</a>
-    </footer>
 </body>
 </html>

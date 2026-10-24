@@ -3,46 +3,7 @@
   var shLine = "curl -fsSL https://raw.githubusercontent.com/krakjn/arc/main/install/get_arc.sh | sh";
   var psLine = "irm https://raw.githubusercontent.com/krakjn/arc/main/install/get_arc.ps1 | iex";
 
-  if (window.hljs) {
-    document.querySelectorAll(".readout pre code").forEach(function (block) {
-      window.hljs.highlightElement(block);
-    });
-  }
-
-  document.querySelectorAll(".readout pre").forEach(function (pre) {
-    if (!pre.querySelector("code")) return;
-    var button = document.createElement("button");
-    button.type = "button";
-    button.className = "copy";
-    button.textContent = "Copy";
-    button.addEventListener("click", function () {
-      var text = pre.querySelector("code").innerText;
-      var done = function (label) {
-        button.textContent = label;
-        setTimeout(function () { button.textContent = "Copy"; }, 1400);
-      };
-      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { done("Copied"); }, function () { done("Select it"); });
-      else done("Select it");
-    });
-    pre.appendChild(button);
-  });
-
-  var links = {};
-  document.querySelectorAll(".readout a[href^='#']").forEach(function (a) {
-    links[decodeURIComponent(a.getAttribute("href").slice(1))] = a;
-  });
-  var headings = document.querySelectorAll(".readout h2[id], .readout h3[id]");
-  if (headings.length && "IntersectionObserver" in window) {
-    var observer = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (!entry.isIntersecting) return;
-        Object.keys(links).forEach(function (id) {
-          links[id].classList.toggle("active", id === entry.target.id);
-        });
-      });
-    }, { rootMargin: "0px 0px -70% 0px" });
-    headings.forEach(function (h) { observer.observe(h); });
-  }
+  var headingObserver = null;
 
   function assetName(tag, suffix) {
     var ver = String(tag || "").replace(/^v/, "");
@@ -50,35 +11,223 @@
     return suffix.indexOf("windows") === 0 ? name + ".exe" : name;
   }
 
-  function pointFittings(tag) {
-    if (!tag) return;
+  var sourceKey = "arc-source-v2";
+  var releasesUrl = "https://github.com/krakjn/arc/releases";
+
+  function readSource() {
+    try { return JSON.parse(sessionStorage.getItem(sourceKey)) || null; } catch (err) { return null; }
+  }
+
+  function pointFittings(facts) {
+    if (!facts) return;
+    var released = facts.release;
+    var note = document.querySelector("[data-fittings-note]");
+    if (note) {
+      note.hidden = Boolean(released);
+      if (!released) {
+        note.textContent = facts.tag
+          ? "No published release yet. Newest tag is " + facts.tag + "; cards open the releases page."
+          : "No published release yet. Cards open the releases page.";
+      }
+    }
     document.querySelectorAll(".fitting[data-asset]").forEach(function (card) {
       var suffix = card.getAttribute("data-asset");
-      var file = assetName(tag, suffix);
-      card.href = "https://github.com/krakjn/arc/releases/download/" + tag + "/" + file;
+      if (!released) {
+        card.href = releasesUrl;
+        card.removeAttribute("download");
+        return;
+      }
+      var file = assetName(released, suffix);
+      card.href = releasesUrl + "/download/" + released + "/" + file;
       card.setAttribute("download", suffix.indexOf("windows") === 0 ? "arc.exe" : "arc");
       var code = card.querySelector("code");
       if (code) code.textContent = file;
     });
   }
 
-  var source = document.querySelector(".source");
-  if (source) {
+  function wireReadoutHeadings() {
+    if (headingObserver) headingObserver.disconnect();
+    var links = {};
+    document.querySelectorAll(".readout a[href^='#']").forEach(function (a) {
+      links[decodeURIComponent(a.getAttribute("href").slice(1))] = a;
+    });
+    var headings = document.querySelectorAll(".readout h2[id], .readout h3[id]");
+    if (!headings.length || !("IntersectionObserver" in window)) return;
+    headingObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        Object.keys(links).forEach(function (id) {
+          links[id].classList.toggle("active", id === entry.target.id);
+        });
+      });
+    }, { rootMargin: "0px 0px -70% 0px" });
+    headings.forEach(function (h) { headingObserver.observe(h); });
+  }
+
+  function enhanceReadout() {
+    if (window.hljs) {
+      document.querySelectorAll(".readout pre code").forEach(function (block) {
+        window.hljs.highlightElement(block);
+      });
+    }
+    document.querySelectorAll(".readout pre").forEach(function (pre) {
+      if (!pre.querySelector("code") || pre.querySelector("button.copy")) return;
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy";
+      button.textContent = "Copy";
+      button.addEventListener("click", function () {
+        var text = pre.querySelector("code").innerText;
+        var done = function (label) {
+          button.textContent = label;
+          setTimeout(function () { button.textContent = "Copy"; }, 1400);
+        };
+        if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { done("Copied"); }, function () { done("Select it"); });
+        else done("Select it");
+      });
+      pre.appendChild(button);
+    });
+    document.querySelectorAll(".readout table").forEach(function (table) {
+      if (table.parentElement.classList.contains("table-wrap")) return;
+      var wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      table.parentNode.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    });
+    document.querySelectorAll(".fitting.is-yours").forEach(function (el) { el.classList.remove("is-yours"); });
+    var ua = navigator.userAgent;
+    var plat = /Windows/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
+    var archBits = /arm64|aarch64/i.test(ua) ? "arm64" : "amd64";
+    var yours = document.querySelector('.fitting[data-platform="' + plat + "-" + archBits + '"]');
+    if (yours) yours.classList.add("is-yours");
+    pointFittings(readSource());
+    wireReadoutHeadings();
+  }
+
+  enhanceReadout();
+
+  function trimPath(pathname) {
+    return pathname.replace(/\/$/, "") || "/";
+  }
+
+  function freezeLinks(root) {
+    if (!root) return;
+    root.querySelectorAll("a[href]").forEach(function (a) {
+      if (a.origin !== location.origin) return;
+      a.setAttribute("href", a.pathname + a.search + a.hash);
+    });
+  }
+
+  var applyModeForPage = null;
+  var loadedPath = location.pathname;
+
+  function syncNav(pathname) {
+    var here = trimPath(pathname);
+    document.querySelectorAll(".pages a").forEach(function (a) {
+      if (trimPath(a.pathname) === here) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
+    if (applyModeForPage) applyModeForPage(pathname);
+  }
+
+  function settleScroll(readout, hash) {
+    var target = hash && document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (target) { target.scrollIntoView({ block: "start" }); return; }
+    var bar = document.querySelector(".bar");
+    var barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
+    if (readout.getBoundingClientRect().top < barBottom) readout.scrollIntoView({ block: "start" });
+  }
+
+  function swapReadout(url, push) {
+    var outgoing = document.querySelector(".readout");
+    var dest = new URL(url, location.href);
+    if (outgoing) outgoing.classList.add("is-swapping");
+    return fetch(dest.href, { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error("load failed");
+      return r.text();
+    }).then(function (html) {
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      var incoming = doc.querySelector(".readout");
+      if (!incoming || !outgoing) throw new Error("no readout");
+      if (push !== false) history.pushState({ arcReadout: dest.pathname }, "", dest.href);
+      outgoing.innerHTML = incoming.innerHTML;
+      loadedPath = dest.pathname;
+      freezeLinks(outgoing);
+      var title = doc.querySelector("title");
+      if (title) document.title = title.textContent;
+      var page = doc.body.getAttribute("data-page");
+      if (page != null) document.body.setAttribute("data-page", page);
+      document.body.classList.toggle("home", doc.body.classList.contains("home"));
+      enhanceReadout();
+      syncNav(dest.pathname);
+      settleScroll(outgoing, dest.hash);
+      outgoing.classList.remove("is-swapping");
+    }).catch(function () {
+      location.href = dest.href;
+    });
+  }
+
+  function swappable(a, e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+    if (a.target && a.target !== "_self") return false;
+    if (a.hasAttribute("download")) return false;
+    if (a.origin !== location.origin) return false;
+    if (!/\/$/.test(a.pathname)) return false;
+    if (a.pathname === location.pathname && a.hash) return false;
+    return Boolean(a.closest(".readout, .pages, [data-swap]") || a.hasAttribute("data-swap"));
+  }
+
+  freezeLinks(document.querySelector(".bar"));
+  freezeLinks(document.querySelector("aside"));
+
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (!a || !swappable(a, e)) return;
+    e.preventDefault();
+    if (a.pathname === location.pathname && !a.hash) {
+      settleScroll(document.querySelector(".readout"), "");
+      return;
+    }
+    swapReadout(a.href);
+  });
+  window.addEventListener("popstate", function () {
+    if (location.pathname === loadedPath) return;
+    swapReadout(location.href, false);
+  });
+  syncNav(location.pathname);
+
+  var chip = document.querySelector(".repo-chip");
+  if (chip) {
     var fill = function (facts) {
-      if (facts.tag) source.querySelector("[data-release]").textContent = facts.tag;
-      if (facts.stars != null) source.querySelector("[data-stars]").textContent = facts.stars + " stars";
-      if (facts.forks != null) source.querySelector("[data-forks]").textContent = facts.forks + " forks";
-      pointFittings(facts.tag);
+      var tag = facts.release || facts.tag;
+      var releaseEl = chip.querySelector("[data-release]");
+      if (tag) releaseEl.textContent = tag;
+      chip.querySelector("[data-release-item]").title = facts.release ? "Latest release" : "Newest tag (no published release)";
+      if (facts.stars != null) chip.querySelector("[data-stars]").textContent = facts.stars;
+      if (facts.forks != null) chip.querySelector("[data-forks]").textContent = facts.forks;
+      pointFittings(facts);
     };
-    var cached = sessionStorage.getItem("arc-source");
-    if (cached) fill(JSON.parse(cached));
+    var cached = readSource();
+    if (cached) fill(cached);
     else {
       var api = "https://api.github.com/repos/krakjn/arc";
-      var json = function (r) { return r.ok ? r.json() : {}; };
-      Promise.all([fetch(api).then(json), fetch(api + "/releases/latest").then(json)]).then(function (res) {
-        var facts = { stars: res[0].stargazers_count, forks: res[0].forks_count, tag: res[1].tag_name };
+      var json = function (r) { return r.ok ? r.json() : null; };
+      Promise.all([
+        fetch(api).then(json),
+        fetch(api + "/releases/latest").then(json),
+        fetch(api + "/tags?per_page=1").then(json)
+      ]).then(function (res) {
+        var repo = res[0] || {};
+        var release = res[1] || {};
+        var tags = res[2] || [];
+        var facts = {
+          stars: repo.stargazers_count,
+          forks: repo.forks_count,
+          release: release.tag_name || "",
+          tag: (tags[0] && tags[0].name) || ""
+        };
         fill(facts);
-        sessionStorage.setItem("arc-source", JSON.stringify(facts));
+        try { sessionStorage.setItem(sourceKey, JSON.stringify(facts)); } catch (err) {}
       }).catch(function () {});
     }
   }
@@ -108,12 +257,6 @@
   }
   if (installSwap) installSwap.addEventListener("click", function () { showInstall(!showingWindows); });
 
-  var ua = navigator.userAgent;
-  var platform = /Windows/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
-  var arch = /arm64|aarch64/i.test(ua) ? "arm64" : "amd64";
-  var yours = document.querySelector('.fitting[data-platform="' + platform + "-" + arch + '"]');
-  if (yours) yours.classList.add("is-yours");
-
   var canvas = document.getElementById("table");
   if (!canvas) return;
   var ctx = canvas.getContext("2d");
@@ -124,18 +267,31 @@
     sync: "Every repo checks out its default branch and pulls. The towers settle and the dirty caps clear.",
     g: "One pass across every repo. -c runs a shell command. -g runs git.",
     config: "One arc.toml names the paths, the remotes, and who depends on whom.",
-    flow: "Push a branch, open the request, then checkout carries the dependencies with it."
+    release: "Every repo on the table runs the same arc. Pick your platform in the readout below."
   };
 
+  function releasesPath() {
+    var href = document.body && document.body.getAttribute("data-releases");
+    return href || "/releases/";
+  }
+
+  function isReleases(pathname) {
+    return trimPath(new URL(releasesPath(), location.href).pathname) === trimPath(pathname);
+  }
+
+  function defaultMode(pathname) {
+    if (isReleases(pathname)) return "release";
+    if (pathname.indexOf("/config") !== -1) return "config";
+    return "status";
+  }
+
   function modeFromPage() {
+    if (isReleases(location.pathname)) return "release";
     try {
       var stored = sessionStorage.getItem("arc-table-mode");
-      if (stored && notes[stored]) return stored;
+      if (stored && stored !== "release" && notes[stored]) return stored;
     } catch (err) {}
-    var path = location.pathname;
-    if (path.indexOf("/config") !== -1) return "config";
-    if (path.indexOf("/workflow") !== -1) return "flow";
-    return "status";
+    return defaultMode(location.pathname);
   }
 
   var repos = [
@@ -176,16 +332,21 @@
     edges.forEach(function (e) { e.lit = 0; });
     if (m === "sync") repos.forEach(function (r) { r.th = 0.22; r.dirty = false; r.ahead = 0; r.behind = 0; });
   }
+  applyModeForPage = function (pathname) {
+    if (isReleases(pathname)) { if (mode !== "release") setMode("release"); }
+    else if (mode === "release") setMode(defaultMode(pathname));
+  };
   setMode(modeFromPage());
   document.querySelectorAll(".modes button").forEach(function (button) {
     button.addEventListener("click", function () {
-      setMode(button.getAttribute("data-mode"));
+      var m = button.getAttribute("data-mode");
+      if (m === "release") {
+        if (isReleases(location.pathname)) setMode(m);
+        else swapReadout(releasesPath());
+        return;
+      }
+      setMode(m);
     });
-  });
-  document.querySelectorAll(".pages a").forEach(function (a) {
-    var path = a.pathname.replace(/\/$/, "") || "/";
-    var here = location.pathname.replace(/\/$/, "") || "/";
-    if (path === here) a.setAttribute("aria-current", "page");
   });
 
   var W = 0, H = 0, S = 0, CX = 0, CY = 0;
@@ -385,7 +546,7 @@
     order.sort(function (a, b) { return a.d - b.d; });
     var tops = [];
     order.forEach(function (o) { tops[o.i] = tower(repos[o.i]); });
-    if (mode === "checkout" || mode === "config" || mode === "flow") edges.forEach(function (e) { beam(e.from, e.to, e.lit); });
+    if (mode === "checkout" || mode === "config" || mode === "release") edges.forEach(function (e) { beam(e.from, e.to, e.lit); });
     drawScan(scan);
     order.forEach(function (o) {
       var r = repos[o.i];
