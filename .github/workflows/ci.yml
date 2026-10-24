@@ -74,7 +74,14 @@ jobs:
           targets: ${{ matrix.target }}
           components: clippy
 
+      # x86_64 ld rejects rustc's aarch64-only --fix-cortex-a53-843419.
+      - name: Install aarch64 cross linker
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'aarch64-linux-gnu-gcc' || '' }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Clippy
